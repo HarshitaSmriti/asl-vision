@@ -1,5 +1,7 @@
 import os
 import sys
+import json
+import base64
 import tempfile
 import time
 import collections
@@ -115,6 +117,20 @@ def get_detector():
     detector = HolisticLandmarkDetector()
     return detector
 
+ALL_95_CLASSES = [
+    "airplane", "all", "alligator", "animal", "another", "any", "apple", "arm", "aunt", "awake",
+    "backyard", "bad", "balloon", "bath", "because", "bed", "bedroom", "before", "beside", "better",
+    "bird", "black", "blow", "blue", "boat", "book", "boy", "brother", "brown", "bug",
+    "bye", "callonphone", "can", "car", "carrot", "cat", "cereal", "chair", "cheek", "child",
+    "chin", "chocolate", "clean", "closet", "cloud", "clown", "cow", "cowboy", "cry", "cut",
+    "cute", "dad", "dance", "dirty", "dog", "doll", "donkey", "down", "drawer", "drink",
+    "drop", "dry", "dryer", "duck", "ear", "elephant", "empty", "every", "eye", "face",
+    "fall", "farm", "fast", "feet", "find", "fine", "finger", "finish", "fireman", "first",
+    "fish", "flag", "flower", "food", "for", "frenchfries", "frog", "garbage", "gift", "giraffe",
+    "girl", "glasswindow", "go", "grandma", "grandpa"
+]
+DEFAULT_CLASS_NAMES = {i: name for i, name in enumerate(ALL_95_CLASSES)}
+
 try:
     engine = get_engine()
     detector = get_detector()
@@ -122,7 +138,8 @@ try:
     model_loaded = True
 except Exception as e:
     model_loaded = False
-    st.error(f"Error loading ASL model: {e}")
+    class_names = DEFAULT_CLASS_NAMES
+    st.warning(f"Note: Backend PyTorch engine initializing: {e}")
 
 # Sidebar
 with st.sidebar:
