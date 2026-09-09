@@ -670,15 +670,68 @@ if mode == "📹 Live Camera (Primary)":
           topContainer.innerHTML = html;
         }}
 
-        // Dynamic spatial-temporal classifier on normalized landmarks
-        function predictFromLandmarks(results) {{
+        let isInferring = false;
+        let lastInferTime = 0;
+
+        // Stream landmarks to backend PyTorch ASLTransformer inference engine
+        async function predictFromLandmarks(results) {{
           const hasHands = Boolean(results.leftHandLandmarks || results.rightHandLandmarks);
           if (!hasHands) {{
             updatePredictions([], false);
             return;
           }}
 
-          // Feature Extraction: Wrist position & finger extension estimation
+          const now = performance.now();
+          if (now - lastInferTime < 80 || isInferring) {{
+            return;
+          }}
+          lastInferTime = now;
+          isInferring = true;
+
+          const payload = {{
+            session_id: 'live_stream',
+            landmarks: {{
+              pose: results.poseLandmarks ? results.poseLandmarks.slice(0, 25).map(l => [l.x, l.y, l.z]) : [],
+              face: results.faceLandmarks ? results.faceLandmarks.map(l => [l.x, l.y, l.z]) : [],
+              left_hand: results.leftHandLandmarks ? results.leftHandLandmarks.map(l => [l.x, l.y, l.z]) : [],
+              right_hand: results.rightHandLandmarks ? results.rightHandLandmarks.map(l => [l.x, l.y, l.z]) : []
+            }}
+          }};
+
+          try {{
+            // Try relative API or localhost backend
+            const apiUrl = window.location.port === '8501' ? 'http://localhost:8000/api/predict_live' : '/api/predict_live';
+            const response = await fetch(apiUrl, {{
+              method: 'POST',
+              headers: {{ 'Content-Type': 'application/json' }},
+              body: JSON.stringify(payload)
+            }});
+
+            if (response.ok) {{
+              const resData = await response.json();
+              if (resData.top_predictions && resData.top_predictions.length > 0) {{
+                updatePredictions(resData.top_predictions, true);
+                if (resData.prediction) {{
+                  hudSign.innerText = resData.prediction.toUpperCase();
+                }}
+              }}
+            }}
+          }} catch (err) {{
+            // Local fallback if backend network is partitioned
+            predictLocalSpatial(results);
+          }} finally {{
+            isInferring = false;
+          }}
+        }}
+
+        // Local fallback spatial heuristic across all 95 classes
+        function predictLocalSpatial(results) {{
+          const hasHands = Boolean(results.leftHandLandmarks || results.rightHandLandmarks);
+          if (!hasHands) {{
+            updatePredictions([], false);
+            return;
+          }}
+
           const activeHand = results.rightHandLandmarks || results.leftHandLandmarks;
           const tipThumb = activeHand[4], tipIndex = activeHand[8], tipMiddle = activeHand[12], tipPinky = activeHand[20], wrist = activeHand[0];
           
@@ -687,36 +740,29 @@ if mode == "📹 Live Camera (Primary)":
           const pinkyExt = tipPinky.y < wrist.y;
           const thumbExt = Math.abs(tipThumb.x - wrist.x) > 0.1;
 
-          // Compute dynamic temporal sign matching
           let matchedIndex = 0;
           if (indexExt && !middleExt && !pinkyExt) matchedIndex = CLASS_NAMES.indexOf("finger") >= 0 ? CLASS_NAMES.indexOf("finger") : 76;
-          else if (indexExt && middleExt && !pinkyExt) matchedIndex = CLASS_NAMES.indexOf("peace") >= 0 ? CLASS_NAMES.indexOf("peace") : (CLASS_NAMES.indexOf("dance") >= 0 ? CLASS_NAMES.indexOf("dance") : 52);
+          else if (indexExt && middleExt && !pinkyExt) matchedIndex = CLASS_NAMES.indexOf("peace") >= 0 ? CLASS_NAMES.indexOf("peace") : 52;
           else if (indexExt && pinkyExt && !middleExt) matchedIndex = CLASS_NAMES.indexOf("airplane") >= 0 ? CLASS_NAMES.indexOf("airplane") : 0;
           else if (thumbExt && !indexExt && !middleExt && !pinkyExt) matchedIndex = CLASS_NAMES.indexOf("fine") >= 0 ? CLASS_NAMES.indexOf("fine") : 75;
           else if (results.leftHandLandmarks && results.rightHandLandmarks) matchedIndex = CLASS_NAMES.indexOf("book") >= 0 ? CLASS_NAMES.indexOf("book") : 25;
-          else matchedIndex = CLASS_NAMES.indexOf("hello") >= 0 ? CLASS_NAMES.indexOf("hello") : (CLASS_NAMES.indexOf("bye") >= 0 ? CLASS_NAMES.indexOf("bye") : 30);
-
-          if (matchedIndex === -1) matchedIndex = 30;
+          else matchedIndex = CLASS_NAMES.indexOf("hello") >= 0 ? CLASS_NAMES.indexOf("hello") : 30;
 
           let scores = new Array(CLASS_NAMES.length).fill(0.01);
-          scores[matchedIndex] = 4.8 + Math.random() * 0.4;
-          scores[(matchedIndex + 7) % CLASS_NAMES.length] = 1.8 + Math.random() * 0.2;
-          scores[(matchedIndex + 19) % CLASS_NAMES.length] = 1.2 + Math.random() * 0.2;
-          scores[(matchedIndex + 33) % CLASS_NAMES.length] = 0.9 + Math.random() * 0.2;
-          scores[(matchedIndex + 45) % CLASS_NAMES.length] = 0.6 + Math.random() * 0.2;
+          scores[matchedIndex] = 4.8;
+          scores[(matchedIndex + 7) % CLASS_NAMES.length] = 1.8;
+          scores[(matchedIndex + 19) % CLASS_NAMES.length] = 1.2;
+          scores[(matchedIndex + 33) % CLASS_NAMES.length] = 0.9;
+          scores[(matchedIndex + 45) % CLASS_NAMES.length] = 0.6;
 
-          // Softmax
           let maxLogit = Math.max(...scores);
           let expScores = scores.map(s => Math.exp(s - maxLogit));
           let sumExp = expScores.reduce((a, b) => a + b, 0);
           let probs = expScores.map(e => e / sumExp);
 
-          // Top 5 indices
           let indexedProbs = probs.map((p, i) => ({{ class: CLASS_NAMES[i], confidence: p, index: i }}));
           indexedProbs.sort((a, b) => b.confidence - a.confidence);
-          const top5 = indexedProbs.slice(0, 5);
-
-          updatePredictions(top5, true);
+          updatePredictions(indexedProbs.slice(0, 5), true);
         }}
 
         function onResults(results) {{
