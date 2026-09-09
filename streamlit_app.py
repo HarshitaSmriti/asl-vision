@@ -862,43 +862,80 @@ if mode == "📹 Live Camera (Primary)":
           predictFromLandmarks(results);
         }}
 
+        let isProcessingFrame = false;
+
         async function initHolisticCamera() {{
-          holistic = new Holistic({{
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${{file}}`
-          }});
+          hudSign.innerText = "Initializing Camera...";
+          try {{
+            holistic = new Holistic({{
+              locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${{file}}`
+            }});
 
-          holistic.setOptions({{
-            modelComplexity: 1,
-            smoothLandmarks: true,
-            enableSegmentation: false,
-            smoothSegmentation: false,
-            refineFaceLandmarks: true,
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5
-          }});
+            holistic.setOptions({{
+              modelComplexity: 1,
+              smoothLandmarks: true,
+              enableSegmentation: false,
+              smoothSegmentation: false,
+              refineFaceLandmarks: false,
+              minDetectionConfidence: 0.5,
+              minTrackingConfidence: 0.5
+            }});
 
-          holistic.onResults(onResults);
+            holistic.onResults(onResults);
 
-          camera = new Camera(videoElement, {{
-            onFrame: async () => {{
-              if (cameraRunning) {{
-                await holistic.send({{ image: videoElement }});
-              }}
-            }},
-            width: 640,
-            height: 480
-          }});
+            // Direct getUserMedia stream acquisition
+            const stream = await navigator.mediaDevices.getUserMedia({{
+              video: {{ width: {{ ideal: 640 }}, height: {{ ideal: 480 }}, facingMode: "user" }},
+              audio: false
+            }});
 
-          await camera.start();
-        }}
+            videoElement.srcObject = stream;
+            await videoElement.play();
 
-        function toggleCamera() {{
-          cameraRunning = !cameraRunning;
-          if (cameraRunning) {{
+            hudSign.innerText = "Position Hands in View";
+            cameraRunning = true;
             toggleCamBtn.innerText = "Stop Camera";
             toggleCamBtn.className = "btn btn-primary";
             liveDot.className = "status-dot status-active";
+
+            // Continuous animation loop
+            async function processVideoLoop() {{
+              if (cameraRunning && videoElement.readyState >= 2 && !isProcessingFrame) {{
+                isProcessingFrame = true;
+                try {{
+                  await holistic.send({{ image: videoElement }});
+                }} catch (e) {{
+                  console.warn("Frame send error:", e);
+                }} finally {{
+                  isProcessingFrame = false;
+                }}
+              }}
+              requestAnimationFrame(processVideoLoop);
+            }}
+            requestAnimationFrame(processVideoLoop);
+
+          }} catch (err) {{
+            console.error("Camera Init Error:", err);
+            hudSign.innerText = "Click 'Start Camera' to Allow Access";
+            toggleCamBtn.innerText = "Start Camera";
+            toggleCamBtn.className = "btn btn-primary";
+            liveDot.className = "status-dot status-inactive";
+          }}
+        }}
+
+        async function toggleCamera() {{
+          if (!cameraRunning) {{
+            cameraRunning = true;
+            toggleCamBtn.innerText = "Stop Camera";
+            toggleCamBtn.className = "btn btn-primary";
+            liveDot.className = "status-dot status-active";
+            if (!videoElement.srcObject) {{
+              await initHolisticCamera();
+            }} else {{
+              videoElement.play();
+            }}
           }} else {{
+            cameraRunning = false;
             toggleCamBtn.innerText = "Start Camera";
             toggleCamBtn.className = "btn";
             liveDot.className = "status-dot status-inactive";
@@ -911,17 +948,18 @@ if mode == "📹 Live Camera (Primary)":
         }}
 
         function resetBuffer() {{
-          frameBuffer = [];
+          smoothedProbs = new Array(CLASS_NAMES.length).fill(1.0 / CLASS_NAMES.length);
+          prevWristPos = null;
           updatePredictions([], false);
         }}
 
-        // Launch on load
-        window.addEventListener('load', () => {{
-          initHolisticCamera().catch(err => {{
-            console.error("Camera Init Error:", err);
-            hudSign.innerText = "Camera Permission Required";
-          }});
-        }});
+        // Reliable immediate startup across iframe lifecycles
+        if (document.readyState === 'complete' || document.readyState === 'interactive') {{
+          initHolisticCamera();
+        }} else {{
+          document.addEventListener('DOMContentLoaded', initHolisticCamera);
+          window.addEventListener('load', initHolisticCamera);
+        }}
       </script>
     </body>
     </html>
