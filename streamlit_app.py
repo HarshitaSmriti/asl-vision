@@ -248,7 +248,7 @@ if mode == "📹 Live Camera (Primary)":
         .container {{
           display: flex;
           gap: 16px;
-          height: 600px;
+          height: 520px;
         }}
         .video-box {{
           flex: 1.3;
@@ -865,6 +865,23 @@ if mode == "📹 Live Camera (Primary)":
         async function initHolisticCamera() {{
           hudSign.innerText = "Starting Camera...";
           try {{
+            // 1. Acquire video stream and play immediately
+            const stream = await navigator.mediaDevices.getUserMedia({{
+              video: {{ width: {{ ideal: 640 }}, height: {{ ideal: 480 }}, facingMode: "user" }},
+              audio: false
+            }});
+
+            videoElement.srcObject = stream;
+            videoElement.muted = true;
+            await videoElement.play();
+
+            hudSign.innerText = "Position Hands in View";
+            cameraRunning = true;
+            toggleCamBtn.innerText = "Stop Camera";
+            toggleCamBtn.className = "btn btn-primary";
+            liveDot.className = "status-dot status-active";
+
+            // 2. Initialize MediaPipe Holistic
             if (!holistic) {{
               holistic = new Holistic({{
                 locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${{file}}`
@@ -883,43 +900,21 @@ if mode == "📹 Live Camera (Primary)":
               holistic.onResults(onResults);
             }}
 
-            // Start stream using Camera helper or getUserMedia fallback
-            if (typeof Camera !== 'undefined') {{
-              camera = new Camera(videoElement, {{
-                onFrame: async () => {{
-                  if (cameraRunning && videoElement.readyState >= 2) {{
-                    await holistic.send({{ image: videoElement }});
-                  }}
-                }},
-                width: 640,
-                height: 480
-              }});
-              await camera.start();
-            }} else {{
-              const stream = await navigator.mediaDevices.getUserMedia({{
-                video: {{ width: 640, height: 480, facingMode: "user" }},
-                audio: false
-              }});
-              videoElement.srcObject = stream;
-              videoElement.muted = true;
-              await videoElement.play();
-
-              const loop = async () => {{
-                if (cameraRunning && videoElement.readyState >= 2) {{
-                  try {{
-                    await holistic.send({{ image: videoElement }});
-                  }} catch (e) {{}}
+            // 3. Continuous frame loop
+            let isLoopRunning = false;
+            const processFrame = async () => {{
+              if (cameraRunning && videoElement.readyState >= 2 && !isLoopRunning) {{
+                isLoopRunning = true;
+                try {{
+                  await holistic.send({{ image: videoElement }});
+                }} catch (err) {{}}
+                finally {{
+                  isLoopRunning = false;
                 }}
-                requestAnimationFrame(loop);
-              }};
-              requestAnimationFrame(loop);
-            }}
-
-            hudSign.innerText = "Position Hands in View";
-            cameraRunning = true;
-            toggleCamBtn.innerText = "Stop Camera";
-            toggleCamBtn.className = "btn btn-primary";
-            liveDot.className = "status-dot status-active";
+              }}
+              requestAnimationFrame(processFrame);
+            }};
+            requestAnimationFrame(processFrame);
 
           }} catch (err) {{
             console.error("Camera Init Error:", err);
@@ -972,7 +967,7 @@ if mode == "📹 Live Camera (Primary)":
     </html>
     """
 
-    st.components.v1.html(live_camera_html, height=640)
+    st.components.v1.html(live_camera_html, height=560)
     
     st.markdown("---")
     st.markdown("💡 **Tip**: Raise your hands in front of the camera. The system tracks your face, mouth shape, upper body, and hand gestures with glowing cyberpunk landmarks while classifying across the 95 vocabulary words in real time!")
