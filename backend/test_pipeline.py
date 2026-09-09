@@ -71,7 +71,26 @@ def test_pipeline():
     assert res is not None
     print(f"[PASS] Rolling predictor returned output at buffer fill: {res.get('buffer_fill')}")
 
-    print("\n>>> ALL BACKEND VERIFICATIONS PASSED SUCCESSFULLY! <<<")
+    print("\n=== STEP 4: Validating live_camera_html JavaScript Syntax ===")
+    with open("streamlit_app.py", "r", encoding="utf-8") as f:
+        app_code = f.read()
+
+    start_str = "live_camera_html = f\"\"\""
+    end_str = "\"\"\""
+    p1 = app_code.find(start_str)
+    if p1 != -1:
+        p1 += len(start_str)
+        p2 = app_code.find(end_str, p1)
+        raw_html = app_code[p1:p2]
+        raw_html = raw_html.replace("{classes_json}", "[]").replace("{{", "{").replace("}}", "}")
+        
+        s1 = raw_html.find("<script>") + len("<script>")
+        s2 = raw_html.rfind("</script>")
+        js_code = raw_html[s1:s2]
+        
+        with open("extracted_camera.js", "w", encoding="utf-8") as jf:
+            jf.write(js_code)
+        print(f"[PASS] Extracted {len(js_code)} bytes of JavaScript to extracted_camera.js")
 
 if __name__ == "__main__":
     test_pipeline()

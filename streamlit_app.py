@@ -690,38 +690,6 @@ if mode == "📹 Live Camera (Primary)":
           predictLocalSpatial(results);
         }}
 
-        // Dynamic 95-class spatial & anatomical gesture classifier
-        function predictLocalSpatial(results) {{
-          const hasHands = Boolean(results.leftHandLandmarks || results.rightHandLandmarks);
-          if (!hasHands) {{
-            updatePredictions([], false);
-            return;
-          }}
-
-          const pose = results.poseLandmarks || [];
-          const nose = pose[0] || {{ x: 0.5, y: 0.3 }};
-          const leftEye = pose[2] || {{ x: 0.55, y: 0.25 }};
-          const rightEye = pose[5] || {{ x: 0.45, y: 0.25 }};
-          const mouth = pose[9] || pose[10] || {{ x: 0.5, y: 0.4 }};
-          const leftShoulder = pose[11] || {{ x: 0.65, y: 0.5 }};
-          const rightShoulder = pose[12] || {{ x: 0.35, y: 0.5 }};
-
-          const lh = results.leftHandLandmarks;
-          const rh = results.rightHandLandmarks;
-          const activeHand = rh || lh;
-          const bothHands = Boolean(lh && rh);
-
-          const wrist = activeHand[0];
-          const tipThumb = activeHand[4], tipIndex = activeHand[8], tipMiddle = activeHand[12], tipRing = activeHand[16], tipPinky = activeHand[20];
-          
-          const indexExt = tipIndex.y < activeHand[6].y;
-          const middleExt = tipMiddle.y < activeHand[10].y;
-          const ringExt = tipRing.y < activeHand[14].y;
-          const pinkyExt = tipPinky.y < activeHand[18].y;
-          const thumbExt = Math.hypot(tipThumb.x - wrist.x, tipThumb.y - wrist.y) > 0.12;
-
-          const numFingers = (indexExt?1:0) + (middleExt?1:0) + (ringExt?1:0) + (pinkyExt?1:0);
-
         // Fluid continuous temporal probability distribution (95 classes)
         let smoothedProbs = new Array(CLASS_NAMES.length).fill(1.0 / CLASS_NAMES.length);
         let prevWristPos = null;
