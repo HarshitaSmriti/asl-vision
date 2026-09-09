@@ -547,50 +547,7 @@ if mode == "📹 Live Camera (Primary)":
             }}
           }}
 
-          // 2. Draw Face & Mouth Expression Contours (Emerald-Cyan)
-          if (results.faceLandmarks && results.faceLandmarks.length > 0) {{
-            canvasCtx.lineWidth = 1.5;
-            canvasCtx.strokeStyle = 'rgba(52, 211, 153, 0.45)';
-            canvasCtx.shadowBlur = 5;
-            canvasCtx.shadowColor = 'rgba(52, 211, 153, 0.7)';
-
-            // Lips
-            canvasCtx.beginPath();
-            for (let k = 0; k < OUTER_LIPS.length; k++) {{
-              const p = getPoint(results.faceLandmarks[OUTER_LIPS[k]], width, height);
-              if (p) {{
-                if (k === 0) canvasCtx.moveTo(p.x, p.y);
-                else canvasCtx.lineTo(p.x, p.y);
-              }}
-            }}
-            canvasCtx.stroke();
-
-            // Eyebrows
-            [LEFT_EYEBROW, RIGHT_EYEBROW].forEach(eb => {{
-              canvasCtx.beginPath();
-              for (let k = 0; k < eb.length; k++) {{
-                const p = getPoint(results.faceLandmarks[eb[k]], width, height);
-                if (p) {{
-                  if (k === 0) canvasCtx.moveTo(p.x, p.y);
-                  else canvasCtx.lineTo(p.x, p.y);
-                }}
-              }}
-              canvasCtx.stroke();
-            }});
-
-            // Expression dots
-            canvasCtx.fillStyle = '#34d399';
-            for (const idx of KEY_FACE_PTS) {{
-              const p = getPoint(results.faceLandmarks[idx], width, height);
-              if (p) {{
-                canvasCtx.beginPath();
-                canvasCtx.arc(p.x, p.y, 2, 0, 2 * Math.PI);
-                canvasCtx.fill();
-              }}
-            }}
-          }}
-
-          // 3. Draw Hands (Cyan Left, Violet Right)
+          // 2. Draw Hands (Cyan Left, Violet Right)
           const drawHand = (landmarks, strokeColor, glowColor) => {{
             if (!landmarks) return;
             canvasCtx.lineWidth = 2.5;
