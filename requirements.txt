@@ -9,3 +9,5 @@ websockets>=11.0
 python-multipart>=0.0.6
 pydantic>=2.0.0
 streamlit>=1.30.0
+streamlit-webrtc>=0.47.0
+av>=10.0.0
