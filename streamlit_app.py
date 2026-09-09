@@ -1018,7 +1018,7 @@ elif mode == "🖼️ Image Upload":
         
         uploaded_img = st.file_uploader("Choose a photo of an ASL sign", type=["jpg", "jpeg", "png", "webp"])
         if uploaded_img is not None:
-            st.image(uploaded_img, caption="Uploaded Image", use_column_width=True)
+            st.image(uploaded_img, caption="Uploaded Image", use_container_width=True)
             
     with col_i2:
         if uploaded_img is not None:
