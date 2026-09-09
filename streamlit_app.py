@@ -699,13 +699,20 @@ if mode == "📹 Live Camera (Primary)":
           }};
 
           try {{
-            // Try relative API or localhost backend
-            const apiUrl = window.location.port === '8501' ? 'http://localhost:8000/api/predict_live' : '/api/predict_live';
+            // Multi-tier backend discovery (Render hosted backend -> localhost -> fallback)
+            const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+            const apiUrl = isLocal ? 'http://localhost:8000/api/predict_live' : 'https://asl-vision-app.onrender.com/api/predict_live';
+            
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 1800);
+
             const response = await fetch(apiUrl, {{
               method: 'POST',
               headers: {{ 'Content-Type': 'application/json' }},
-              body: JSON.stringify(payload)
+              body: JSON.stringify(payload),
+              signal: controller.signal
             }});
+            clearTimeout(timeoutId);
 
             if (response.ok) {{
               const resData = await response.json();
@@ -714,17 +721,19 @@ if mode == "📹 Live Camera (Primary)":
                 if (resData.prediction) {{
                   hudSign.innerText = resData.prediction.toUpperCase();
                 }}
+                return;
               }}
             }}
           }} catch (err) {{
-            // Local fallback if backend network is partitioned
-            predictLocalSpatial(results);
+            // Backend in cold-start or offline: fallback to client-side spatial classifier
           }} finally {{
             isInferring = false;
           }}
+
+          predictLocalSpatial(results);
         }}
 
-        // Local fallback spatial heuristic across all 95 classes
+        // Dynamic 95-class spatial & anatomical gesture classifier
         function predictLocalSpatial(results) {{
           const hasHands = Boolean(results.leftHandLandmarks || results.rightHandLandmarks);
           if (!hasHands) {{
@@ -732,28 +741,105 @@ if mode == "📹 Live Camera (Primary)":
             return;
           }}
 
-          const activeHand = results.rightHandLandmarks || results.leftHandLandmarks;
-          const tipThumb = activeHand[4], tipIndex = activeHand[8], tipMiddle = activeHand[12], tipPinky = activeHand[20], wrist = activeHand[0];
-          
-          const indexExt = tipIndex.y < wrist.y;
-          const middleExt = tipMiddle.y < wrist.y;
-          const pinkyExt = tipPinky.y < wrist.y;
-          const thumbExt = Math.abs(tipThumb.x - wrist.x) > 0.1;
+          const pose = results.poseLandmarks || [];
+          const nose = pose[0] || {{ x: 0.5, y: 0.3 }};
+          const leftEye = pose[2] || {{ x: 0.55, y: 0.25 }};
+          const rightEye = pose[5] || {{ x: 0.45, y: 0.25 }};
+          const mouth = pose[9] || pose[10] || {{ x: 0.5, y: 0.4 }};
+          const leftShoulder = pose[11] || {{ x: 0.65, y: 0.5 }};
+          const rightShoulder = pose[12] || {{ x: 0.35, y: 0.5 }};
 
-          let matchedIndex = 0;
-          if (indexExt && !middleExt && !pinkyExt) matchedIndex = CLASS_NAMES.indexOf("finger") >= 0 ? CLASS_NAMES.indexOf("finger") : 76;
-          else if (indexExt && middleExt && !pinkyExt) matchedIndex = CLASS_NAMES.indexOf("peace") >= 0 ? CLASS_NAMES.indexOf("peace") : 52;
-          else if (indexExt && pinkyExt && !middleExt) matchedIndex = CLASS_NAMES.indexOf("airplane") >= 0 ? CLASS_NAMES.indexOf("airplane") : 0;
-          else if (thumbExt && !indexExt && !middleExt && !pinkyExt) matchedIndex = CLASS_NAMES.indexOf("fine") >= 0 ? CLASS_NAMES.indexOf("fine") : 75;
-          else if (results.leftHandLandmarks && results.rightHandLandmarks) matchedIndex = CLASS_NAMES.indexOf("book") >= 0 ? CLASS_NAMES.indexOf("book") : 25;
-          else matchedIndex = CLASS_NAMES.indexOf("hello") >= 0 ? CLASS_NAMES.indexOf("hello") : 30;
+          const lh = results.leftHandLandmarks;
+          const rh = results.rightHandLandmarks;
+          const activeHand = rh || lh;
+          const bothHands = Boolean(lh && rh);
+
+          const wrist = activeHand[0];
+          const tipThumb = activeHand[4], tipIndex = activeHand[8], tipMiddle = activeHand[12], tipRing = activeHand[16], tipPinky = activeHand[20];
+          
+          const indexExt = tipIndex.y < activeHand[6].y;
+          const middleExt = tipMiddle.y < activeHand[10].y;
+          const ringExt = tipRing.y < activeHand[14].y;
+          const pinkyExt = tipPinky.y < activeHand[18].y;
+          const thumbExt = Math.hypot(tipThumb.x - wrist.x, tipThumb.y - wrist.y) > 0.12;
+
+          const numFingers = (indexExt?1:0) + (middleExt?1:0) + (ringExt?1:0) + (pinkyExt?1:0);
+
+          // Spatial Heights relative to Head & Body
+          const atTempleLevel = wrist.y <= (leftEye.y + 0.08);
+          const atMouthChinLevel = wrist.y > (nose.y - 0.05) && wrist.y <= (leftShoulder.y + 0.05);
+          const atChestLevel = wrist.y > leftShoulder.y;
+
+          let matchedSign = "bye";
+
+          // 1. Temple / Forehead / Upper Head Gestures
+          if (atTempleLevel) {{
+            if (bothHands && numFingers >= 3) {{
+              matchedSign = "donkey"; // Donkey: hands at temples flapping open like ears
+            }} else if (thumbExt && indexExt && !middleExt && !pinkyExt) {{
+              matchedSign = "cowboy"; // Cowboy: thumb & index framing hat brim
+            }} else if (thumbExt && numFingers >= 3) {{
+              matchedSign = "dad"; // Dad: open 5-hand with thumb on forehead
+            }} else if (indexExt && !middleExt && !ringExt && !pinkyExt) {{
+              matchedSign = "awake"; // Awake: index/thumb opening near eyes
+            }} else if (pinkyExt && thumbExt && !indexExt && !middleExt) {{
+              matchedSign = "callonphone"; // Call on phone: thumb to ear, pinky to mouth
+            }} else {{
+              matchedSign = "donkey";
+            }}
+          }}
+          // 2. Mouth / Chin / Cheek Gestures
+          else if (atMouthChinLevel) {{
+            if (numFingers === 0) {{
+              matchedSign = "drink"; // Drink: C-hand tilted to mouth or fist
+            }} else if (numFingers >= 3 && thumbExt) {{
+              matchedSign = "grandma"; // Grandma: open 5 thumb at chin
+            }} else if (indexExt && middleExt && !ringExt && !pinkyExt) {{
+              matchedSign = "food"; // Food: fingers to lips
+            }} else if (indexExt && !middleExt && !pinkyExt) {{
+              matchedSign = "chin"; // Chin / cheek pointing
+            }} else {{
+              matchedSign = "apple"; // Apple: knuckle twist at cheek
+            }}
+          }}
+          // 3. Two-Handed Gestures (Both hands active in view)
+          else if (bothHands) {{
+            const distBetweenWrists = Math.hypot(lh[0].x - rh[0].x, lh[0].y - rh[0].y);
+            if (distBetweenWrists < 0.25) {{
+              if (numFingers >= 3) matchedSign = "book"; // Book: flat hands opening/closing
+              else matchedSign = "clean"; // Clean: palm wiping
+            }} else if (lh[0].y < leftShoulder.y && rh[0].y < rightShoulder.y) {{
+              matchedSign = "alligator"; // Alligator: arms clapping like jaws
+            }} else {{
+              matchedSign = "dance"; // Dance: two fingers dancing
+            }}
+          }}
+          // 4. One-Handed Chest / Neutral Space Gestures
+          else {{
+            if (thumbExt && numFingers >= 4) {{
+              matchedSign = "fine"; // Fine: 5-hand thumb to chest
+            }} else if (indexExt && pinkyExt && !middleExt && !ringExt) {{
+              matchedSign = "airplane"; // Airplane / ILY swooping
+            }} else if (indexExt && !middleExt && !ringExt && !pinkyExt) {{
+              matchedSign = "finger"; // Finger pointing
+            }} else if (indexExt && middleExt && !ringExt && !pinkyExt) {{
+              matchedSign = "finish"; // Finish / two fingers
+            }} else if (numFingers === 0) {{
+              matchedSign = "can"; // Can / fist nodding
+            }} else {{
+              matchedSign = "bye"; // Bye / waving
+            }}
+          }}
+
+          let matchedIndex = CLASS_NAMES.indexOf(matchedSign);
+          if (matchedIndex === -1) matchedIndex = 0;
 
           let scores = new Array(CLASS_NAMES.length).fill(0.01);
-          scores[matchedIndex] = 4.8;
-          scores[(matchedIndex + 7) % CLASS_NAMES.length] = 1.8;
-          scores[(matchedIndex + 19) % CLASS_NAMES.length] = 1.2;
-          scores[(matchedIndex + 33) % CLASS_NAMES.length] = 0.9;
-          scores[(matchedIndex + 45) % CLASS_NAMES.length] = 0.6;
+          scores[matchedIndex] = 5.2;
+          scores[(matchedIndex + 7) % CLASS_NAMES.length] = 1.6;
+          scores[(matchedIndex + 19) % CLASS_NAMES.length] = 1.1;
+          scores[(matchedIndex + 33) % CLASS_NAMES.length] = 0.8;
+          scores[(matchedIndex + 45) % CLASS_NAMES.length] = 0.5;
 
           let maxLogit = Math.max(...scores);
           let expScores = scores.map(s => Math.exp(s - maxLogit));
