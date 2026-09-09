@@ -83,6 +83,56 @@ def get_info():
         "classes": [class_names[i] for i in sorted(class_names.keys())]
     }
 
+# Session dictionary for HTTP-based live streaming
+live_http_predictors: Dict[str, RollingLivePredictor] = {}
+
+@app.post("/api/predict_live")
+async def predict_live_step(data: Dict[str, Any]):
+    """
+    Accepts client landmarks dictionary from browser/Streamlit,
+    processes 348-dim features through rolling temporal predictor,
+    and returns real-time PyTorch ASLTransformer predictions.
+    """
+    session_id = data.get("session_id", "default")
+    if session_id not in live_http_predictors:
+        live_http_predictors[session_id] = RollingLivePredictor(buffer_size=64, step_size=2, min_frames=16)
+
+    predictor = live_http_predictors[session_id]
+    
+    if data.get("action") == "reset":
+        predictor.reset()
+        return {"status": "reset"}
+
+    raw_landmarks = data.get("landmarks", {})
+    lh_present = len(raw_landmarks.get("left_hand", [])) > 0
+    rh_present = len(raw_landmarks.get("right_hand", [])) > 0
+
+    if not (lh_present or rh_present):
+        return {
+            "success": True,
+            "prediction": "Position hands in view",
+            "is_confident": False,
+            "confidence": 0.0,
+            "top_predictions": [],
+            "hand_detected": False
+        }
+
+    frame_features = process_client_landmarks_dict(raw_landmarks)
+    pred_result = predictor.add_frame(frame_features)
+    
+    if pred_result is None:
+        pred_result = {
+            "success": True,
+            "prediction": "Buffering motion...",
+            "confidence": 0.0,
+            "top_predictions": [],
+            "hand_detected": True
+        }
+    else:
+        pred_result["hand_detected"] = True
+
+    return pred_result
+
 @app.post("/predict/video")
 async def predict_video(file: UploadFile = File(...)):
     """
