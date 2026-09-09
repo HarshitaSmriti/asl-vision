@@ -149,6 +149,53 @@ export default function LiveCamera({ onPredictionUpdate, onStatusChange }) {
       }
     }
 
+    // Draw Face Expression & Mouth Contours (Subtle emerald-cyan glow)
+    if (results.faceLandmarks && results.faceLandmarks.length > 0) {
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = 'rgba(52, 211, 153, 0.45)';
+      ctx.shadowBlur = 5;
+      ctx.shadowColor = 'rgba(52, 211, 153, 0.7)';
+
+      // Outer Lips contour for facial expression tracking
+      const outerLips = [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 409, 270, 269, 267, 0, 37, 39, 40, 185, 61];
+      ctx.beginPath();
+      for (let k = 0; k < outerLips.length; k++) {
+        const p = getPoint(results.faceLandmarks[outerLips[k]]);
+        if (p) {
+          if (k === 0) ctx.moveTo(p.x, p.y);
+          else ctx.lineTo(p.x, p.y);
+        }
+      }
+      ctx.stroke();
+
+      // Eyebrows (Expression indicators)
+      const leftEyebrow = [70, 63, 105, 66, 107];
+      const rightEyebrow = [336, 296, 334, 293, 300];
+      [leftEyebrow, rightEyebrow].forEach(eb => {
+        ctx.beginPath();
+        for (let k = 0; k < eb.length; k++) {
+          const p = getPoint(results.faceLandmarks[eb[k]]);
+          if (p) {
+            if (k === 0) ctx.moveTo(p.x, p.y);
+            else ctx.lineTo(p.x, p.y);
+          }
+        }
+        ctx.stroke();
+      });
+
+      // Subtle key facial expression points (mouth corners, chin, nose, cheeks)
+      const keyFacePoints = [0, 13, 14, 17, 61, 291, 199, 1, 4, 168, 105, 334];
+      ctx.fillStyle = '#34d399';
+      for (const idx of keyFacePoints) {
+        const p = getPoint(results.faceLandmarks[idx]);
+        if (p) {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 2.2, 0, 2 * Math.PI);
+          ctx.fill();
+        }
+      }
+    }
+
     // Helper to draw a single hand with cyberpunk aesthetic
     const drawHand = (handLandmarks, primaryColor, glowColor) => {
       if (!handLandmarks) return;
