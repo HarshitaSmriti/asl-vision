@@ -16,41 +16,73 @@ class HolisticLandmarkDetector:
     Wrapper around MediaPipe Holistic solution for video and image landmark extraction.
     """
     def __init__(self, static_image_mode: bool = False, min_detection_confidence: float = 0.5, min_tracking_confidence: float = 0.5):
-        self.mp_holistic = mp.solutions.holistic
-        self.holistic = self.mp_holistic.Holistic(
-            static_image_mode=static_image_mode,
-            model_complexity=1,
-            smooth_landmarks=True,
-            min_detection_confidence=min_detection_confidence,
-            min_tracking_confidence=min_tracking_confidence
-        )
+        self.holistic = None
+        try:
+            if hasattr(mp, 'solutions') and hasattr(mp.solutions, 'holistic'):
+                self.holistic = mp.solutions.holistic.Holistic(
+                    static_image_mode=static_image_mode,
+                    model_complexity=1,
+                    smooth_landmarks=True,
+                    min_detection_confidence=min_detection_confidence,
+                    min_tracking_confidence=min_tracking_confidence
+                )
+            else:
+                from mediapipe.python.solutions import holistic as mp_holistic
+                self.holistic = mp_holistic.Holistic(
+                    static_image_mode=static_image_mode,
+                    model_complexity=1,
+                    smooth_landmarks=True,
+                    min_detection_confidence=min_detection_confidence,
+                    min_tracking_confidence=min_tracking_confidence
+                )
+        except Exception as e:
+            print(f"Warning: MediaPipe Holistic Python engine could not be initialized directly: {e}")
+            self.holistic = None
 
     def process_frame(self, bgr_image: np.ndarray) -> Tuple[np.ndarray, Dict[str, Any]]:
         """
         Processes a single BGR image and returns (348_features, landmark_points_dict).
         """
-        rgb_image = cv2.cvtColor(bgr_image, cv2.COLOR_BGR2RGB)
-        results = self.holistic.process(rgb_image)
+        if self.holistic is not None:
+            try:
+                rgb_image = cv2.cvtColor(bgr_image, cv2.COLOR_BGR2RGB)
+                results = self.holistic.process(rgb_image)
 
-        pose_arr, face_arr, lh_arr, rh_arr, lh_present, rh_present = extract_frame_landmarks(
-            results.pose_landmarks,
-            results.face_landmarks,
-            results.left_hand_landmarks,
-            results.right_hand_landmarks
-        )
+                pose_arr, face_arr, lh_arr, rh_arr, lh_present, rh_present = extract_frame_landmarks(
+                    results.pose_landmarks,
+                    results.face_landmarks,
+                    results.left_hand_landmarks,
+                    results.right_hand_landmarks
+                )
 
-        features_348 = normalize_frame(pose_arr, face_arr, lh_arr, rh_arr, lh_present, rh_present)
+                features_348 = normalize_frame(pose_arr, face_arr, lh_arr, rh_arr, lh_present, rh_present)
 
-        landmarks_dict = {
+                landmarks_dict = {
+                    "pose": pose_arr.tolist(),
+                    "face": face_arr.tolist(),
+                    "left_hand": lh_arr.tolist() if lh_present else [],
+                    "right_hand": rh_arr.tolist() if rh_present else [],
+                    "left_hand_present": lh_present,
+                    "right_hand_present": rh_present
+                }
+                return features_348, landmarks_dict
+            except Exception as ex:
+                print(f"Frame processing error in MediaPipe: {ex}")
+
+        # Fallback default if detector unavailable
+        pose_arr = np.zeros((25, 3), dtype=np.float32)
+        face_arr = np.zeros((7, 3), dtype=np.float32)
+        lh_arr = np.zeros((21, 3), dtype=np.float32)
+        rh_arr = np.zeros((21, 3), dtype=np.float32)
+        features_348 = normalize_frame(pose_arr, face_arr, lh_arr, rh_arr, False, False)
+        return features_348, {
             "pose": pose_arr.tolist(),
             "face": face_arr.tolist(),
-            "left_hand": lh_arr.tolist() if lh_present else [],
-            "right_hand": rh_arr.tolist() if rh_present else [],
-            "left_hand_present": lh_present,
-            "right_hand_present": rh_present
+            "left_hand": [],
+            "right_hand": [],
+            "left_hand_present": False,
+            "right_hand_present": False
         }
-
-        return features_348, landmarks_dict
 
     def process_video_path(self, video_path: str, max_frames: int = 300) -> Tuple[np.ndarray, List[Dict[str, Any]], float]:
         """
@@ -88,5 +120,8 @@ class HolisticLandmarkDetector:
         return sample_696, landmarks_timeline, fps
 
     def close(self):
-        if hasattr(self, 'holistic'):
-            self.holistic.close()
+        if hasattr(self, 'holistic') and self.holistic is not None:
+            try:
+                self.holistic.close()
+            except Exception:
+                pass

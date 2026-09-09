@@ -1,12 +1,10 @@
---extra-index-url https://download.pytorch.org/whl/cpu
 torch>=2.0.0
 numpy>=1.24.0
 scipy>=1.10.0
 opencv-python-headless>=4.7.0
-mediapipe==0.10.14
+mediapipe>=0.10.30
 fastapi>=0.100.0
 uvicorn[standard]>=0.22.0
 websockets>=11.0
 python-multipart>=0.0.6
 pydantic>=2.0.0
-gunicorn>=21.0.0
