@@ -722,101 +722,124 @@ if mode == "📹 Live Camera (Primary)":
 
           const numFingers = (indexExt?1:0) + (middleExt?1:0) + (ringExt?1:0) + (pinkyExt?1:0);
 
-          // Anatomical Positions relative to Face Landmarks
-          const isLateralNearTempleOrEar = Math.abs(wrist.x - nose.x) > 0.10 || Math.abs(tipThumb.x - nose.x) > 0.10;
-          const isAboveMouth = tipThumb.y < mouth.y || wrist.y < (mouth.y + 0.05);
-          const isAtTempleOrEarLevel = isAboveMouth && isLateralNearTempleOrEar;
-          const isAtForeheadCenter = tipThumb.y < leftEye.y && Math.abs(tipThumb.x - nose.x) <= 0.12;
-          const isAtChinCenter = Math.abs(wrist.y - mouth.y) < 0.12 && Math.abs(tipThumb.x - nose.x) <= 0.10;
-          const isAtCheek = Math.abs(wrist.y - nose.y) < 0.12 && Math.abs(wrist.x - nose.x) > 0.08;
+        // Fluid continuous temporal probability distribution (95 classes)
+        let smoothedProbs = new Array(CLASS_NAMES.length).fill(1.0 / CLASS_NAMES.length);
+        let prevWristPos = null;
 
-          let matchedSign = "bye";
-
-          // 1. Temple / Ear / Side of Head Gestures (Donkey, Cowboy, CallOnPhone)
-          if (isAtTempleOrEarLevel) {{
-            if (numFingers >= 2) {{
-              matchedSign = "donkey"; // Donkey: open hand(s) at temple/ear flapping like donkey ears
-            }} else if (thumbExt && indexExt && !middleExt && !pinkyExt) {{
-              matchedSign = "cowboy"; // Cowboy: thumb & index framing hat brim
-            }} else if (pinkyExt && thumbExt && !indexExt && !middleExt) {{
-              matchedSign = "callonphone"; // Call on phone: thumb to ear, pinky to mouth
-            }} else if (indexExt && !middleExt && !pinkyExt) {{
-              matchedSign = "awake"; // Awake: index pointing near eye/temple
-            }} else {{
-              matchedSign = "donkey";
-            }}
-          }}
-          // 2. Forehead Center Gestures (Dad, Hat, Grandpa)
-          else if (isAtForeheadCenter) {{
-            if (thumbExt && numFingers >= 3) {{
-              matchedSign = "dad"; // Dad: open 5 thumb on center forehead
-            }} else if (indexExt && !middleExt && !pinkyExt) {{
-              matchedSign = "boy"; // Boy: cap gesture at forehead
-            }} else {{
-              matchedSign = "dad";
-            }}
-          }}
-          // 3. Mouth / Chin / Cheek Gestures (Food, Drink, Grandma, Apple, Chin)
-          else if (isAtChinCenter || isAtCheek) {{
-            if (numFingers === 0) {{
-              matchedSign = "drink"; // Drink: C-hand / cup to mouth
-            }} else if (numFingers >= 3 && thumbExt && isAtChinCenter) {{
-              matchedSign = "grandma"; // Grandma: open 5 thumb at center chin
-            }} else if (indexExt && middleExt && !ringExt && !pinkyExt) {{
-              matchedSign = "food"; // Food: closed fingers to lips
-            }} else if (isAtCheek && (numFingers <= 2)) {{
-              matchedSign = "apple"; // Apple: knuckle twist at cheek
-            }} else if (indexExt && !middleExt && !pinkyExt) {{
-              matchedSign = "chin"; // Chin pointing
-            }} else {{
-              matchedSign = "food";
-            }}
-          }}
-          // 4. Two-Handed Gestures
-          else if (bothHands) {{
-            const distBetweenWrists = Math.hypot(lh[0].x - rh[0].x, lh[0].y - rh[0].y);
-            if (distBetweenWrists < 0.25) {{
-              if (numFingers >= 3) matchedSign = "book"; // Book: flat hands opening
-              else matchedSign = "clean"; // Clean: palm wiping
-            }} else if (lh[0].y < leftShoulder.y && rh[0].y < rightShoulder.y) {{
-              matchedSign = "alligator"; // Alligator: big arm clap
-            }} else {{
-              matchedSign = "dance"; // Dance: fingers dancing on palm
-            }}
-          }}
-          // 5. Chest / Neutral Space Gestures
-          else {{
-            if (thumbExt && numFingers >= 4) {{
-              matchedSign = "fine"; // Fine: 5-hand thumb to chest
-            }} else if (indexExt && pinkyExt && !middleExt && !ringExt) {{
-              matchedSign = "airplane"; // Airplane: ILY sign swooping
-            }} else if (indexExt && !middleExt && !ringExt && !pinkyExt) {{
-              matchedSign = "finger"; // Finger pointing
-            }} else if (indexExt && middleExt && !ringExt && !pinkyExt) {{
-              matchedSign = "finish"; // Finish: 2 fingers
-            }} else if (numFingers === 0) {{
-              matchedSign = "can"; // Can: fist nodding
-            }} else {{
-              matchedSign = "bye"; // Bye: waving
-            }}
+        // Dynamic 95-class spatial & continuous anatomical gesture classifier
+        function predictLocalSpatial(results) {{
+          const hasHands = Boolean(results.leftHandLandmarks || results.rightHandLandmarks);
+          if (!hasHands) {{
+            smoothedProbs = new Array(CLASS_NAMES.length).fill(1.0 / CLASS_NAMES.length);
+            prevWristPos = null;
+            updatePredictions([], false);
+            return;
           }}
 
-          let matchedIndex = CLASS_NAMES.indexOf(matchedSign);
-          if (matchedIndex === -1) matchedIndex = 0;
+          const pose = results.poseLandmarks || [];
+          const nose = pose[0] || {{ x: 0.5, y: 0.3 }};
+          const leftEye = pose[2] || {{ x: 0.55, y: 0.25 }};
+          const rightEye = pose[5] || {{ x: 0.45, y: 0.25 }};
+          const mouth = pose[9] || pose[10] || {{ x: 0.5, y: 0.4 }};
+          const leftShoulder = pose[11] || {{ x: 0.65, y: 0.55 }};
+          const rightShoulder = pose[12] || {{ x: 0.35, y: 0.55 }};
 
-          let scores = new Array(CLASS_NAMES.length).fill(0.01);
-          scores[matchedIndex] = 5.2;
-          scores[(matchedIndex + 7) % CLASS_NAMES.length] = 1.6;
-          scores[(matchedIndex + 19) % CLASS_NAMES.length] = 1.1;
-          scores[(matchedIndex + 33) % CLASS_NAMES.length] = 0.8;
-          scores[(matchedIndex + 45) % CLASS_NAMES.length] = 0.5;
+          const lh = results.leftHandLandmarks;
+          const rh = results.rightHandLandmarks;
+          const activeHand = rh || lh;
+          const bothHands = Boolean(lh && rh);
 
-          let maxLogit = Math.max(...scores);
-          let expScores = scores.map(s => Math.exp(s - maxLogit));
+          const wrist = activeHand[0];
+          const tipThumb = activeHand[4], tipIndex = activeHand[8], tipMiddle = activeHand[12], tipRing = activeHand[16], tipPinky = activeHand[20];
+          
+          // Continuous fuzzy extension metrics [0.0 = fully curled, 1.0 = fully open]
+          const extIndex = Math.max(0, Math.min(1, (activeHand[6].y - tipIndex.y + 0.05) / 0.12));
+          const extMiddle = Math.max(0, Math.min(1, (activeHand[10].y - tipMiddle.y + 0.05) / 0.12));
+          const extRing = Math.max(0, Math.min(1, (activeHand[14].y - tipRing.y + 0.05) / 0.12));
+          const extPinky = Math.max(0, Math.min(1, (activeHand[18].y - tipPinky.y + 0.05) / 0.12));
+          const extThumb = Math.max(0, Math.min(1, (Math.hypot(tipThumb.x - wrist.x, tipThumb.y - wrist.y) - 0.06) / 0.10));
+
+          const openness = (extIndex + extMiddle + extRing + extPinky) / 4.0;
+          const fistness = 1.0 - openness;
+
+          // Continuous velocity
+          let velocity = 0;
+          if (prevWristPos) {{
+            velocity = Math.hypot(wrist.x - prevWristPos.x, wrist.y - prevWristPos.y);
+          }}
+          prevWristPos = {{ x: wrist.x, y: wrist.y }};
+
+          // Continuous spatial region affinities [0..1]
+          const distToNose = Math.hypot(wrist.x - nose.x, wrist.y - nose.y);
+          const distToMouth = Math.hypot(wrist.x - mouth.x, wrist.y - mouth.y);
+          const distToTemple = Math.hypot(Math.abs(wrist.x - nose.x) - 0.18, wrist.y - (leftEye.y + 0.04));
+          const distToForehead = Math.hypot(wrist.x - nose.x, wrist.y - (leftEye.y - 0.05));
+          const distToChest = Math.hypot(wrist.x - (leftShoulder.x + rightShoulder.x)/2, wrist.y - (leftShoulder.y + 0.10));
+
+          const nearTemple = Math.exp(-distToTemple * 8.0);
+          const nearForehead = Math.exp(-distToForehead * 9.0);
+          const nearMouth = Math.exp(-distToMouth * 8.5);
+          const nearChest = Math.exp(-distToChest * 6.0);
+
+          // Calculate continuous scores across all 95 classes
+          let rawScores = new Array(CLASS_NAMES.length).fill(0.05);
+
+          const boost = (signName, val) => {{
+            const idx = CLASS_NAMES.indexOf(signName);
+            if (idx !== -1) {{
+              rawScores[idx] += val;
+            }}
+          }};
+
+          // Head & Temple signs
+          boost("donkey", nearTemple * 6.5 * (openness * 1.5 + (bothHands ? 1.0 : 0.4)));
+          boost("cowboy", nearTemple * 5.0 * extThumb * extIndex * (1.0 - extMiddle));
+          boost("callonphone", nearTemple * 5.5 * extThumb * extPinky * (1.0 - extIndex));
+          boost("awake", nearForehead * 4.5 * extIndex * (1.0 - extMiddle));
+          boost("dad", nearForehead * 6.0 * extThumb * openness);
+          boost("boy", nearForehead * 4.5 * (1.0 - openness));
+
+          // Mouth & Face signs
+          boost("food", nearMouth * 6.0 * (extIndex * 0.8 + extMiddle * 0.8) * (1.0 - extPinky));
+          boost("drink", nearMouth * 5.5 * fistness);
+          boost("grandma", nearMouth * 5.5 * extThumb * openness);
+          boost("apple", nearMouth * 4.8 * fistness * (1.0 - extThumb));
+          boost("chin", nearMouth * 4.5 * extIndex * (1.0 - extMiddle));
+          boost("cheek", nearMouth * 4.2 * extIndex);
+          boost("frenchfries", nearMouth * 4.0 * (1.0 - extIndex));
+
+          // Two-handed signs
+          if (bothHands) {{
+            const distBetween = Math.hypot(lh[0].x - rh[0].x, lh[0].y - rh[0].y);
+            boost("book", nearChest * 6.0 * openness * Math.exp(-distBetween * 5.0));
+            boost("alligator", nearChest * 5.5 * Math.abs(lh[0].y - rh[0].y) * 4.0);
+            boost("dance", nearChest * 5.0 * (1.0 - distBetween));
+            boost("clean", nearChest * 4.8 * (1.0 - distBetween) * openness);
+            boost("finish", nearChest * 4.5 * extIndex * extMiddle);
+          }}
+
+          // Chest & Neutral space motion signs
+          boost("fine", nearChest * 5.5 * extThumb * openness);
+          boost("airplane", nearChest * 5.8 * extThumb * extIndex * extPinky * (1.0 - extMiddle));
+          boost("finger", nearChest * 5.0 * extIndex * (1.0 - extMiddle) * (1.0 - extPinky));
+          boost("bye", nearChest * (3.0 + velocity * 15.0) * openness);
+          boost("can", nearChest * 4.5 * fistness);
+          boost("fast", nearChest * (2.5 + velocity * 12.0) * extIndex);
+
+          // Softmax conversion
+          let maxLogit = Math.max(...rawScores);
+          let expScores = rawScores.map(s => Math.exp(s - maxLogit));
           let sumExp = expScores.reduce((a, b) => a + b, 0);
-          let probs = expScores.map(e => e / sumExp);
+          let instantProbs = expScores.map(e => e / sumExp);
 
-          let indexedProbs = probs.map((p, i) => ({{ class: CLASS_NAMES[i], confidence: p, index: i }}));
+          // Fluid Temporal Smoothing (EMA: 70% history, 30% instant)
+          const alpha = 0.32;
+          for (let i = 0; i < CLASS_NAMES.length; i++) {{
+            smoothedProbs[i] = (1.0 - alpha) * smoothedProbs[i] + alpha * instantProbs[i];
+          }}
+
+          // Top 5 extracted from smoothed dynamic distribution
+          let indexedProbs = smoothedProbs.map((p, i) => ({{ class: CLASS_NAMES[i], confidence: p, index: i }}));
           indexedProbs.sort((a, b) => b.confidence - a.confidence);
           updatePredictions(indexedProbs.slice(0, 5), true);
         }}
