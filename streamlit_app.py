@@ -417,7 +417,7 @@ if mode == "📹 Live Camera (Primary)":
       <div class="container">
         <!-- Live Video & Skeleton View -->
         <div class="video-box">
-          <video id="webcam" playsinline></video>
+          <video id="webcam" autoplay playsinline muted></video>
           <canvas id="output_canvas"></canvas>
           
           <div class="hud-overlay">
@@ -862,35 +862,58 @@ if mode == "📹 Live Camera (Primary)":
           predictFromLandmarks(results);
         }}
 
-        let isProcessingFrame = false;
-
         async function initHolisticCamera() {{
-          hudSign.innerText = "Initializing Camera...";
+          hudSign.innerText = "Starting Camera...";
           try {{
-            holistic = new Holistic({{
-              locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${{file}}`
-            }});
+            if (!holistic) {{
+              holistic = new Holistic({{
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${{file}}`
+              }});
 
-            holistic.setOptions({{
-              modelComplexity: 1,
-              smoothLandmarks: true,
-              enableSegmentation: false,
-              smoothSegmentation: false,
-              refineFaceLandmarks: false,
-              minDetectionConfidence: 0.5,
-              minTrackingConfidence: 0.5
-            }});
+              holistic.setOptions({{
+                modelComplexity: 1,
+                smoothLandmarks: true,
+                enableSegmentation: false,
+                smoothSegmentation: false,
+                refineFaceLandmarks: false,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+              }});
 
-            holistic.onResults(onResults);
+              holistic.onResults(onResults);
+            }}
 
-            // Direct getUserMedia stream acquisition
-            const stream = await navigator.mediaDevices.getUserMedia({{
-              video: {{ width: {{ ideal: 640 }}, height: {{ ideal: 480 }}, facingMode: "user" }},
-              audio: false
-            }});
+            // Start stream using Camera helper or getUserMedia fallback
+            if (typeof Camera !== 'undefined') {{
+              camera = new Camera(videoElement, {{
+                onFrame: async () => {{
+                  if (cameraRunning && videoElement.readyState >= 2) {{
+                    await holistic.send({{ image: videoElement }});
+                  }}
+                }},
+                width: 640,
+                height: 480
+              }});
+              await camera.start();
+            }} else {{
+              const stream = await navigator.mediaDevices.getUserMedia({{
+                video: {{ width: 640, height: 480, facingMode: "user" }},
+                audio: false
+              }});
+              videoElement.srcObject = stream;
+              videoElement.muted = true;
+              await videoElement.play();
 
-            videoElement.srcObject = stream;
-            await videoElement.play();
+              const loop = async () => {{
+                if (cameraRunning && videoElement.readyState >= 2) {{
+                  try {{
+                    await holistic.send({{ image: videoElement }});
+                  }} catch (e) {{}}
+                }}
+                requestAnimationFrame(loop);
+              }};
+              requestAnimationFrame(loop);
+            }}
 
             hudSign.innerText = "Position Hands in View";
             cameraRunning = true;
@@ -898,25 +921,9 @@ if mode == "📹 Live Camera (Primary)":
             toggleCamBtn.className = "btn btn-primary";
             liveDot.className = "status-dot status-active";
 
-            // Continuous animation loop
-            async function processVideoLoop() {{
-              if (cameraRunning && videoElement.readyState >= 2 && !isProcessingFrame) {{
-                isProcessingFrame = true;
-                try {{
-                  await holistic.send({{ image: videoElement }});
-                }} catch (e) {{
-                  console.warn("Frame send error:", e);
-                }} finally {{
-                  isProcessingFrame = false;
-                }}
-              }}
-              requestAnimationFrame(processVideoLoop);
-            }}
-            requestAnimationFrame(processVideoLoop);
-
           }} catch (err) {{
             console.error("Camera Init Error:", err);
-            hudSign.innerText = "Click 'Start Camera' to Allow Access";
+            hudSign.innerText = "Click 'Start Camera' to Grant Access";
             toggleCamBtn.innerText = "Start Camera";
             toggleCamBtn.className = "btn btn-primary";
             liveDot.className = "status-dot status-inactive";
