@@ -9,10 +9,11 @@ export default function PredictionPanel({
   isLive = true,
   status = 'ready'
 }) {
-  const currentSign = predictionResult?.prediction || (handDetected ? 'Detecting sign...' : 'No hand detected');
-  const confidence = predictionResult?.confidence ? (predictionResult.confidence * 100).toFixed(1) : '0.0';
-  const isConfident = predictionResult?.is_confident ?? false;
-  const topPredictions = predictionResult?.top_predictions || [];
+  const hasHands = handDetected || (predictionResult?.hand_detected ?? false);
+  const currentSign = hasHands ? (predictionResult?.prediction || 'Detecting sign...') : 'Position hands in view';
+  const confidence = hasHands && predictionResult?.confidence ? (predictionResult.confidence * 100).toFixed(1) : '0.0';
+  const isConfident = hasHands && (predictionResult?.is_confident ?? false);
+  const topPredictions = hasHands ? (predictionResult?.top_predictions || []) : [];
 
   // Color mapping based on confidence
   const confNum = parseFloat(confidence);

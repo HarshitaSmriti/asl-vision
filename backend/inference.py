@@ -18,17 +18,24 @@ class ASLInferenceEngine:
     def predict_sample(self, sample_696: np.ndarray, top_k: int = 5) -> Dict[str, Any]:
         """
         Runs model inference on a (64, 696) numpy array.
-        Returns:
-            {
-                "success": bool,
-                "prediction": str,
-                "confidence": float,
-                "top_predictions": [{"class": str, "confidence": float}, ...],
-                "all_probabilities": dict (optional or compact)
-            }
         """
         if sample_696.shape != (SEQUENCE_LENGTH, 696):
             raise ValueError(f"Expected shape ({SEQUENCE_LENGTH}, 696), got {sample_696.shape}")
+
+        # Check if hands are present in the temporal sequence
+        # Left Hand (222:285) & Right Hand (285:348) local coordinates
+        hand_features = sample_696[:, 222:348]
+        has_hands = np.max(np.abs(hand_features)) > 1e-4
+
+        if not has_hands:
+            return {
+                "success": True,
+                "prediction": "No hands in view",
+                "is_confident": False,
+                "raw_top_class": None,
+                "confidence": 0.0,
+                "top_predictions": []
+            }
 
         tensor_in = torch.from_numpy(sample_696).unsqueeze(0).to(self.device)  # (1, 64, 696)
         
