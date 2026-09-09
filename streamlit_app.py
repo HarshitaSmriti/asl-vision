@@ -765,69 +765,82 @@ if mode == "📹 Live Camera (Primary)":
 
           const numFingers = (indexExt?1:0) + (middleExt?1:0) + (ringExt?1:0) + (pinkyExt?1:0);
 
-          // Spatial Heights relative to Head & Body
-          const atTempleLevel = wrist.y <= (leftEye.y + 0.08);
-          const atMouthChinLevel = wrist.y > (nose.y - 0.05) && wrist.y <= (leftShoulder.y + 0.05);
-          const atChestLevel = wrist.y > leftShoulder.y;
+          // Anatomical Positions relative to Face Landmarks
+          const isLateralNearTempleOrEar = Math.abs(wrist.x - nose.x) > 0.10 || Math.abs(tipThumb.x - nose.x) > 0.10;
+          const isAboveMouth = tipThumb.y < mouth.y || wrist.y < (mouth.y + 0.05);
+          const isAtTempleOrEarLevel = isAboveMouth && isLateralNearTempleOrEar;
+          const isAtForeheadCenter = tipThumb.y < leftEye.y && Math.abs(tipThumb.x - nose.x) <= 0.12;
+          const isAtChinCenter = Math.abs(wrist.y - mouth.y) < 0.12 && Math.abs(tipThumb.x - nose.x) <= 0.10;
+          const isAtCheek = Math.abs(wrist.y - nose.y) < 0.12 && Math.abs(wrist.x - nose.x) > 0.08;
 
           let matchedSign = "bye";
 
-          // 1. Temple / Forehead / Upper Head Gestures
-          if (atTempleLevel) {{
-            if (bothHands && numFingers >= 3) {{
-              matchedSign = "donkey"; // Donkey: hands at temples flapping open like ears
+          // 1. Temple / Ear / Side of Head Gestures (Donkey, Cowboy, CallOnPhone)
+          if (isAtTempleOrEarLevel) {{
+            if (numFingers >= 2) {{
+              matchedSign = "donkey"; // Donkey: open hand(s) at temple/ear flapping like donkey ears
             }} else if (thumbExt && indexExt && !middleExt && !pinkyExt) {{
               matchedSign = "cowboy"; // Cowboy: thumb & index framing hat brim
-            }} else if (thumbExt && numFingers >= 3) {{
-              matchedSign = "dad"; // Dad: open 5-hand with thumb on forehead
-            }} else if (indexExt && !middleExt && !ringExt && !pinkyExt) {{
-              matchedSign = "awake"; // Awake: index/thumb opening near eyes
             }} else if (pinkyExt && thumbExt && !indexExt && !middleExt) {{
               matchedSign = "callonphone"; // Call on phone: thumb to ear, pinky to mouth
+            }} else if (indexExt && !middleExt && !pinkyExt) {{
+              matchedSign = "awake"; // Awake: index pointing near eye/temple
             }} else {{
               matchedSign = "donkey";
             }}
           }}
-          // 2. Mouth / Chin / Cheek Gestures
-          else if (atMouthChinLevel) {{
-            if (numFingers === 0) {{
-              matchedSign = "drink"; // Drink: C-hand tilted to mouth or fist
-            }} else if (numFingers >= 3 && thumbExt) {{
-              matchedSign = "grandma"; // Grandma: open 5 thumb at chin
-            }} else if (indexExt && middleExt && !ringExt && !pinkyExt) {{
-              matchedSign = "food"; // Food: fingers to lips
+          // 2. Forehead Center Gestures (Dad, Hat, Grandpa)
+          else if (isAtForeheadCenter) {{
+            if (thumbExt && numFingers >= 3) {{
+              matchedSign = "dad"; // Dad: open 5 thumb on center forehead
             }} else if (indexExt && !middleExt && !pinkyExt) {{
-              matchedSign = "chin"; // Chin / cheek pointing
+              matchedSign = "boy"; // Boy: cap gesture at forehead
             }} else {{
-              matchedSign = "apple"; // Apple: knuckle twist at cheek
+              matchedSign = "dad";
             }}
           }}
-          // 3. Two-Handed Gestures (Both hands active in view)
+          // 3. Mouth / Chin / Cheek Gestures (Food, Drink, Grandma, Apple, Chin)
+          else if (isAtChinCenter || isAtCheek) {{
+            if (numFingers === 0) {{
+              matchedSign = "drink"; // Drink: C-hand / cup to mouth
+            }} else if (numFingers >= 3 && thumbExt && isAtChinCenter) {{
+              matchedSign = "grandma"; // Grandma: open 5 thumb at center chin
+            }} else if (indexExt && middleExt && !ringExt && !pinkyExt) {{
+              matchedSign = "food"; // Food: closed fingers to lips
+            }} else if (isAtCheek && (numFingers <= 2)) {{
+              matchedSign = "apple"; // Apple: knuckle twist at cheek
+            }} else if (indexExt && !middleExt && !pinkyExt) {{
+              matchedSign = "chin"; // Chin pointing
+            }} else {{
+              matchedSign = "food";
+            }}
+          }}
+          // 4. Two-Handed Gestures
           else if (bothHands) {{
             const distBetweenWrists = Math.hypot(lh[0].x - rh[0].x, lh[0].y - rh[0].y);
             if (distBetweenWrists < 0.25) {{
-              if (numFingers >= 3) matchedSign = "book"; // Book: flat hands opening/closing
+              if (numFingers >= 3) matchedSign = "book"; // Book: flat hands opening
               else matchedSign = "clean"; // Clean: palm wiping
             }} else if (lh[0].y < leftShoulder.y && rh[0].y < rightShoulder.y) {{
-              matchedSign = "alligator"; // Alligator: arms clapping like jaws
+              matchedSign = "alligator"; // Alligator: big arm clap
             }} else {{
-              matchedSign = "dance"; // Dance: two fingers dancing
+              matchedSign = "dance"; // Dance: fingers dancing on palm
             }}
           }}
-          // 4. One-Handed Chest / Neutral Space Gestures
+          // 5. Chest / Neutral Space Gestures
           else {{
             if (thumbExt && numFingers >= 4) {{
               matchedSign = "fine"; // Fine: 5-hand thumb to chest
             }} else if (indexExt && pinkyExt && !middleExt && !ringExt) {{
-              matchedSign = "airplane"; // Airplane / ILY swooping
+              matchedSign = "airplane"; // Airplane: ILY sign swooping
             }} else if (indexExt && !middleExt && !ringExt && !pinkyExt) {{
               matchedSign = "finger"; // Finger pointing
             }} else if (indexExt && middleExt && !ringExt && !pinkyExt) {{
-              matchedSign = "finish"; // Finish / two fingers
+              matchedSign = "finish"; // Finish: 2 fingers
             }} else if (numFingers === 0) {{
-              matchedSign = "can"; // Can / fist nodding
+              matchedSign = "can"; // Can: fist nodding
             }} else {{
-              matchedSign = "bye"; // Bye / waving
+              matchedSign = "bye"; // Bye: waving
             }}
           }}
 
