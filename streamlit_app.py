@@ -618,9 +618,7 @@ if mode == "📹 Live Camera (Primary)":
           // 1. Draw Body Pose Skeleton (Cyan)
           if (results.poseLandmarks) {{
             canvasCtx.lineWidth = 2;
-            canvasCtx.strokeStyle = 'rgba(6, 182, 212, 0.4)';
-            canvasCtx.shadowBlur = 6;
-            canvasCtx.shadowColor = 'rgba(6, 182, 212, 0.6)';
+            canvasCtx.strokeStyle = 'rgba(6, 182, 212, 0.6)';
 
             for (const [i, j] of POSE_CONNECTIONS) {{
               const p1 = getPoint(results.poseLandmarks[i], width, height);
@@ -644,12 +642,10 @@ if mode == "📹 Live Camera (Primary)":
           }}
 
           // 2. Draw Hands (Cyan Left, Violet Right)
-          const drawHand = (landmarks, strokeColor, glowColor) => {{
+          const drawHand = (landmarks, strokeColor, dotColor) => {{
             if (!landmarks) return;
-            canvasCtx.lineWidth = 2.5;
+            canvasCtx.lineWidth = 2;
             canvasCtx.strokeStyle = strokeColor;
-            canvasCtx.shadowBlur = 10;
-            canvasCtx.shadowColor = glowColor;
 
             for (const [i, j] of HAND_CONNECTIONS) {{
               const p1 = getPoint(landmarks[i], width, height);
@@ -665,24 +661,20 @@ if mode == "📹 Live Camera (Primary)":
               const p = getPoint(landmarks[i], width, height);
               if (p) {{
                 const isTip = [4,8,12,16,20].includes(i);
-                canvasCtx.fillStyle = isTip ? '#ffffff' : strokeColor;
-                canvasCtx.shadowBlur = isTip ? 12 : 6;
-                canvasCtx.shadowColor = '#ffffff';
+                canvasCtx.fillStyle = isTip ? '#ffffff' : dotColor;
                 canvasCtx.beginPath();
-                canvasCtx.arc(p.x, p.y, isTip ? 4.5 : 3, 0, 2 * Math.PI);
+                canvasCtx.arc(p.x, p.y, isTip ? 4 : 2.5, 0, 2 * Math.PI);
                 canvasCtx.fill();
               }}
             }}
           }};
 
           if (results.leftHandLandmarks) {{
-            drawHand(results.leftHandLandmarks, '#06b6d4', 'rgba(6, 182, 212, 0.9)');
+            drawHand(results.leftHandLandmarks, '#06b6d4', '#22d3ee');
           }}
           if (results.rightHandLandmarks) {{
-            drawHand(results.rightHandLandmarks, '#a855f7', 'rgba(168, 85, 247, 0.9)');
+            drawHand(results.rightHandLandmarks, '#a855f7', '#c084fc');
           }}
-
-          canvasCtx.shadowBlur = 0;
         }}
 
         // Dynamic prediction updater with Hybrid layer support
@@ -796,7 +788,7 @@ if mode == "📹 Live Camera (Primary)":
           }}
 
           const now = performance.now();
-          if (now - lastInferTime < 70 || isInferring) {{
+          if (now - lastInferTime < 100 || isInferring) {{
             return;
           }}
           lastInferTime = now;
@@ -984,7 +976,7 @@ if mode == "📹 Live Camera (Primary)":
               }});
 
               holistic.setOptions({{
-                modelComplexity: 1,
+                modelComplexity: 0,
                 smoothLandmarks: true,
                 enableSegmentation: false,
                 smoothSegmentation: false,
@@ -1012,10 +1004,15 @@ if mode == "📹 Live Camera (Primary)":
             toggleCamBtn.className = "btn btn-primary";
             liveDot.className = "status-dot status-active";
 
-            // 3. Continuous frame loop
+            // 3. Throttled continuous frame loop (Smooth ~22 FPS without CPU overload)
             let isSending = false;
+            let lastSendTime = 0;
+            const FRAME_INTERVAL_MS = 45;
+
             const pumpFrames = async () => {{
-              if (cameraRunning && videoElement.readyState >= 2 && !isSending) {{
+              const now = performance.now();
+              if (cameraRunning && videoElement.readyState >= 2 && !isSending && (now - lastSendTime >= FRAME_INTERVAL_MS)) {{
+                lastSendTime = now;
                 isSending = true;
                 try {{
                   await holistic.send({{ image: videoElement }});
