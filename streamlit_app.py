@@ -874,10 +874,13 @@ if mode == "📹 Live Camera (Primary)":
           const scissorDists = frameHistory.map(f => f.scissorDist);
           const isScissorAction = isTwoFingers && ((Math.max(...scissorDists) - Math.min(...scissorDists)) > 0.020);
 
-          // Spatial checks
-          const handHigh = (wrist.y < nose.y + 0.18) || (rh[8].y < nose.y + 0.08) || (rh[12].y < nose.y + 0.08);
-          const handNearChin = (dist(rh[8], chin) < 0.25) || (dist(rh[12], chin) < 0.25) || (dist(rh[9], chin) < 0.25) || (dist(wrist, chin) < 0.28);
-          const handNearChest = !handHigh && !handNearChin && wrist.y < 0.88;
+          // Calibrated Anatomical Spatial Zones
+          // 1. Forehead / Temple level (Fingertips must be at or above eyebrow/temple, wrist high)
+          const handForehead = (rh[8].y < nose.y - 0.01) && (wrist.y < nose.y + 0.08);
+          // 2. Face / Cheek / Chin level
+          const handNearChin = (dist(rh[8], chin) < 0.22) || (dist(rh[12], chin) < 0.22) || (dist(rh[9], chin) < 0.22);
+          // 3. Chest / Neutral level
+          const handNearChest = !handForehead && !handNearChin && wrist.y < 0.88;
 
           // Trajectory across history window
           const startW = frameHistory[0].wrist;
@@ -916,24 +919,24 @@ if mode == "📹 Live Camera (Primary)":
           // 1. DYNAMIC ACTION & GESTURE MATCHING
           // ==========================================
           // --- HEAD & FOREHEAD ---
-          // A. Hello: Open flat palm raised at forehead / temple / head level
-          if (isOpenPalm && handHigh) {{
+          // A. Hello: Open flat palm raised at forehead / temple / brow level
+          if (isOpenPalm && handForehead) {{
             detected = "hello"; conf = 0.96; source = "everyday_gesture_layer";
           }}
           // B. Brother: Index / L-hand at forehead
-          else if (isIndexOnly && handHigh) {{
+          else if (isIndexOnly && handForehead) {{
             detected = "brother"; conf = 0.94; source = "95_class_model";
           }}
           // C. Grandpa: Open 5 hand bouncing forward from forehead
-          else if (isOpenPalm && handHigh && disp > 0.025) {{
+          else if (isOpenPalm && handForehead && disp > 0.025) {{
             detected = "grandpa"; conf = 0.93; source = "95_class_model";
           }}
-          // D. Boy / Dad: Hand tapping / touching forehead
-          else if (isPinch && handHigh) {{
+          // D. Boy / Dad: Hand tapping forehead brim
+          else if (isPinch && handForehead) {{
             detected = "boy"; conf = 0.92; source = "95_class_model";
           }}
           // E. Ear: Index pointing near ear
-          else if (isIndexOnly && handHigh && !handNearChin) {{
+          else if (isIndexOnly && handForehead && !handNearChin) {{
             detected = "ear"; conf = 0.91; source = "95_class_model";
           }}
 
