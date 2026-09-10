@@ -816,15 +816,17 @@ if mode == "📹 Live Camera (Primary)":
             const rExt = isFingerExt(hand, 16, 13);
             const pExt = isFingerExt(hand, 20, 17);
             const extCount = [iExt, mExt, rExt, pExt].filter(Boolean).length;
+            const pinchGap = dist(hand[4], hand[8]);
+
             return {{
-              isOpenPalm: extCount >= 3,
+              isOpenPalm: extCount >= 4,
               isFist: extCount === 0,
+              isWHand: iExt && mExt && rExt && !pExt,
               isTwoFingers: iExt && mExt && !rExt && !pExt,
               isIndexOnly: iExt && !mExt && !rExt && !pExt,
-              isWHand: iExt && mExt && rExt && !pExt,
-              isPinch: dist(hand[4], hand[8]) < 0.080,
-              isYHand: (tExt || pExt) && pExt && !mExt && !rExt,
-              isThumbsUp: tExt && !iExt && !mExt && !rExt && !pExt
+              isPinch: pinchGap < 0.055 && !rExt && !pExt,
+              isYHand: tExt && pExt && !mExt && !rExt,
+              isThumbsUp: tExt && extCount === 0
             }};
           }};
 
@@ -833,18 +835,22 @@ if mode == "📹 Live Camera (Primary)":
 
           const isOpenPalm = rhShape.isOpenPalm;
           const isFist = rhShape.isFist;
+          const isWHand = rhShape.isWHand;
           const isTwoFingers = rhShape.isTwoFingers;
           const isIndexOnly = rhShape.isIndexOnly;
-          const isWHand = rhShape.isWHand;
           const isPinch = rhShape.isPinch;
           const isYHand = rhShape.isYHand;
           const isThumbsUp = rhShape.isThumbsUp;
 
-          // Dynamic Action Metrics across window
-          const pinchDists = frameHistory.map(f => f.pinchDist);
-          const minPinch = Math.min(...pinchDists);
-          const maxPinch = Math.max(...pinchDists);
-          const isPinchingAction = (isPinch || (maxPinch - minPinch > 0.035));
+          let shapeName = "tracking";
+          if (isOpenPalm) shapeName = "open_palm";
+          else if (isFist) shapeName = "fist";
+          else if (isWHand) shapeName = "three_fingers_w";
+          else if (isTwoFingers) shapeName = "two_fingers_v";
+          else if (isIndexOnly) shapeName = "index_point";
+          else if (isPinch) shapeName = "pinch_beak";
+          else if (isYHand) shapeName = "y_hand";
+          else if (isThumbsUp) shapeName = "thumbs_up";
 
           const scissorDists = frameHistory.map(f => f.scissorDist);
           const isScissorAction = isTwoFingers && ((Math.max(...scissorDists) - Math.min(...scissorDists)) > 0.020);
@@ -925,9 +931,9 @@ if mode == "📹 Live Camera (Primary)":
           else if (isYHand && handNearChin) {{
             detected = "callonphone"; conf = 0.94; source = "95_class_model";
           }}
-          // I. Water: W-hand (3 fingers) at chin
-          else if (isWHand && handNearChin) {{
-            detected = "water"; conf = 0.93; source = "95_class_model";
+          // I. Water: W-hand (3 fingers) at chin or chest
+          else if (isWHand && (handNearChin || handNearChest)) {{
+            detected = "water"; conf = 0.94; source = "95_class_model";
           }}
           // J. Eat / Food: Tapered pinch tapping lips
           else if (isPinch && handNearChin) {{
@@ -994,7 +1000,7 @@ if mode == "📹 Live Camera (Primary)":
 
           // --- DYNAMIC FINGER & AIR ACTIONS ---
           // Y. Duck / Bird: Beak opening & closing (chattering action)
-          else if (isPinchingAction && (handNearChin || handNearChest)) {{
+          else if (isPinch && (handNearChin || handNearChest)) {{
             detected = "duck"; conf = 0.96; source = "95_class_model";
           }}
           // Z. Cut: Scissors opening & closing action
@@ -1088,7 +1094,7 @@ if mode == "📹 Live Camera (Primary)":
               buffer_fill: Math.min(64, frameHistory.length * 4),
               buffer_target: 64,
               debug_telemetry: {{
-                hand_shape: isOpenPalm ? "open_palm" : (isIndexOnly ? "index_point" : (isFist ? "fist" : (isPinch ? "pinch" : "y_hand"))),
+                hand_shape: shapeName,
                 displacement_magnitude: disp,
                 near_chin: handNearChin,
                 near_forehead: handHigh
@@ -1107,7 +1113,7 @@ if mode == "📹 Live Camera (Primary)":
             buffer_fill: Math.min(64, frameHistory.length * 4),
             buffer_target: 64,
             debug_telemetry: {{
-              hand_shape: isOpenPalm ? "open_palm" : (isIndexOnly ? "index_point" : (isFist ? "fist" : "hand")),
+              hand_shape: shapeName,
               displacement_magnitude: disp,
               near_chin: handNearChin,
               near_forehead: handHigh
