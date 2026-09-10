@@ -37,7 +37,6 @@ from backend.hybrid_inference import HybridASLInferenceEngine, HybridRollingLive
 # Set Page Config
 st.set_page_config(
     page_title="ASL Vision | Hybrid Sign Language AI",
-    page_icon="🤟",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -174,22 +173,22 @@ except Exception as e:
 
 # Sidebar
 with st.sidebar:
-    st.markdown("### 🤟 ASL VISION AI (HYBRID)")
+    st.markdown("### ASL VISION AI (HYBRID)")
     st.markdown("<p style='font-size: 0.8rem; color: #94a3b8;'>Real-Time Sign Language Recognition (Transformer + Gesture Layer)</p>", unsafe_allow_html=True)
     
     st.markdown("---")
     
     mode = st.radio(
         "Select Recognition Mode:",
-        ["📹 Live Camera (Primary)", "🎯 Test My Sign", "🎬 Video Upload", "🖼️ Image Upload", "🔬 Model Diagnostics", "📖 95-Sign Dictionary"],
+        ["Live Camera (Primary)", "Test My Sign", "Video Upload", "Image Upload", "Model Diagnostics", "95-Sign Dictionary"],
         index=0
     )
     
     st.markdown("---")
-    hybrid_mode_toggle = st.toggle("⚡ Enable Hybrid Recognition Mode", value=True, help="Combines 95-class neural model with geometric rule verification and everyday signs (hello, thank you, please, etc.)")
+    hybrid_mode_toggle = st.toggle("Enable Hybrid Recognition Mode", value=True, help="Combines 95-class neural model with geometric rule verification and everyday signs (hello, thank you, please, etc.)")
     
     confidence_thresh = st.slider(
-        "🎯 Confidence Threshold:",
+        "Confidence Threshold:",
         min_value=0.05,
         max_value=0.90,
         value=0.20,
@@ -198,7 +197,7 @@ with st.sidebar:
     )
     
     st.markdown("---")
-    st.markdown("#### ⚡ System Specifications")
+    st.markdown("#### System Specifications")
     st.markdown("""
     - **Primary Model**: `ASLTransformer` (4 Layers, 4 Heads)
     - **Input Representation**: 64 Frames × 696 Velocity Dims
@@ -238,11 +237,11 @@ def render_prediction_results(pred_result, is_image=False):
     
     # Choose badge style based on prediction source
     if source == "everyday_gesture_layer":
-        source_badge = '<span class="badge-source-everyday">✨ Everyday Gesture Layer</span>'
+        source_badge = '<span class="badge-source-everyday">Everyday Gesture Layer</span>'
     elif source == "uncertain" or not pred_result.get("is_confident", True):
-        source_badge = '<span class="badge-source-uncertain">⚠️ Uncertain / Low Evidence</span>'
+        source_badge = '<span class="badge-source-uncertain">Uncertain / Low Evidence</span>'
     else:
-        source_badge = '<span class="badge-source-neural">🏷️ 95-Class Neural Model</span>'
+        source_badge = '<span class="badge-source-neural">95-Class Neural Model</span>'
 
     st.markdown(f"""
     <div class="pred-banner">
@@ -265,14 +264,14 @@ def render_prediction_results(pred_result, is_image=False):
     """, unsafe_allow_html=True)
 
     if telemetry:
-        with st.expander("🔬 Kinematic & Hand Shape Telemetry", expanded=False):
+        with st.expander("Kinematic & Hand Shape Telemetry", expanded=False):
             t_col1, t_col2, t_col3, t_col4 = st.columns(4)
             t_col1.metric("Dominant Hand", telemetry.get("dominant_hand", "N/A").capitalize())
             t_col2.metric("Hand Shape", telemetry.get("hand_shape", "N/A").replace("_", " ").capitalize())
             t_col3.metric("Near Chin", "Yes" if telemetry.get("near_chin") else "No")
             t_col4.metric("Displacement", f"{telemetry.get('displacement_magnitude', 0.0):.2f}")
     
-    st.markdown("#### 🏆 Top Predictions (Hybrid Evaluation)")
+    st.markdown("#### Top Predictions (Hybrid Evaluation)")
     if top_preds:
         for i, item in enumerate(top_preds):
             cls_name = item.get("class", "").capitalize()
@@ -291,8 +290,8 @@ def render_prediction_results(pred_result, is_image=False):
 # ---------------------------------------------------------
 # MODE 1: LIVE CAMERA (PRIMARY)
 # ---------------------------------------------------------
-if mode == "📹 Live Camera (Primary)":
-    st.markdown("### 📹 Real-Time Live Webcam Recognition")
+if mode == "Live Camera (Primary)":
+    st.markdown("### Real-Time Live Webcam Recognition")
     st.markdown("Continuous temporal sign language recognition directly from your live video stream. Face expressions, mouth contours, body posture, and hand gestures are tracked with glowing cyber skeletons while the 95-class neural model classifies gestures in real-time.")
 
     # 95 classes as JSON string
@@ -540,7 +539,7 @@ if mode == "📹 Live Camera (Primary)":
           <!-- Controls -->
           <div class="ctrl-row">
             <button id="toggle-cam-btn" class="btn btn-primary" onclick="toggleCamera()">Stop Camera</button>
-            <button id="toggle-hybrid-btn" class="btn" onclick="toggleHybrid()" style="border-color: #c084fc; color: #c084fc;">⚡ Hybrid: ON</button>
+            <button id="toggle-hybrid-btn" class="btn" onclick="toggleHybrid()" style="border-color: #c084fc; color: #c084fc;">Hybrid: ON</button>
             <button id="reset-buf-btn" class="btn" onclick="resetBuffer()">Reset Buffer</button>
           </div>
         </div>
@@ -715,15 +714,15 @@ if mode == "📹 Live Camera (Primary)":
 
           // Badge source formatting
           if (source === "everyday_gesture_layer") {{
-            sourceBadge.innerText = "✨ Everyday Gesture Layer";
+            sourceBadge.innerText = "Everyday Gesture Layer";
             sourceBadge.style.borderColor = "rgba(168, 85, 247, 0.6)";
             sourceBadge.style.color = "#c084fc";
           }} else if (source === "uncertain" || !isConfident) {{
-            sourceBadge.innerText = "⚠️ Uncertain / Detecting";
+            sourceBadge.innerText = "Uncertain / Detecting";
             sourceBadge.style.borderColor = "rgba(245, 158, 11, 0.6)";
             sourceBadge.style.color = "#fbbf24";
           }} else {{
-            sourceBadge.innerText = "🏷️ 95-Class Neural Model";
+            sourceBadge.innerText = "95-Class Neural Model";
             sourceBadge.style.borderColor = "rgba(6, 182, 212, 0.6)";
             sourceBadge.style.color = "#38bdf8";
           }}
@@ -942,7 +941,7 @@ if mode == "📹 Live Camera (Primary)":
 
           // --- FACE & CHIN ---
           // F. Thank You: Flat open hand touching or close to chin/mouth moving out
-          else if (isOpenPalm && handNearChin && !handHigh) {{
+          else if (isOpenPalm && handNearChin && !handForehead) {{
             detected = "thank you"; conf = 0.95; source = "everyday_gesture_layer";
           }}
           // G. Apple: Fist/knuckle at cheek or chin
@@ -1034,7 +1033,7 @@ if mode == "📹 Live Camera (Primary)":
             detected = "airplane"; conf = 0.95; source = "95_class_model";
           }}
           // BB. Bye: Open palm waving side to side at shoulder height
-          else if (isOpenPalm && !handHigh && !handNearChin && (Math.abs(dx) > 0.012 || disp > 0.02)) {{
+          else if (isOpenPalm && !handForehead && !handNearChin && (Math.abs(dx) > 0.012 || disp > 0.02)) {{
             detected = "bye"; conf = 0.95; source = "everyday_gesture_layer";
           }}
           // CC. Where: Index finger wagging side to side in front
@@ -1119,7 +1118,7 @@ if mode == "📹 Live Camera (Primary)":
                 hand_shape: shapeName,
                 displacement_magnitude: disp,
                 near_chin: handNearChin,
-                near_forehead: handHigh
+                near_forehead: handForehead
               }}
             }};
           }}
@@ -1140,7 +1139,7 @@ if mode == "📹 Live Camera (Primary)":
                 hand_shape: shapeName,
                 displacement_magnitude: disp,
                 near_chin: handNearChin,
-                near_forehead: handHigh
+                near_forehead: handForehead
               }}
             }};
           }}
@@ -1159,7 +1158,7 @@ if mode == "📹 Live Camera (Primary)":
               hand_shape: shapeName,
               displacement_magnitude: disp,
               near_chin: handNearChin,
-              near_forehead: handHigh
+              near_forehead: handForehead
             }}
           }};
         }}
@@ -1252,11 +1251,11 @@ if mode == "📹 Live Camera (Primary)":
         function toggleHybrid() {{
           hybridMode = !hybridMode;
           if (hybridMode) {{
-            toggleHybridBtn.innerText = "⚡ Hybrid: ON";
+            toggleHybridBtn.innerText = "Hybrid: ON";
             toggleHybridBtn.style.color = "#c084fc";
             toggleHybridBtn.style.borderColor = "#c084fc";
           }} else {{
-            toggleHybridBtn.innerText = "🏷️ Pure Neural (95)";
+            toggleHybridBtn.innerText = "Pure Neural (95)";
             toggleHybridBtn.style.color = "#38bdf8";
             toggleHybridBtn.style.borderColor = "#38bdf8";
           }}
@@ -1374,7 +1373,7 @@ if mode == "📹 Live Camera (Primary)":
     
     st.markdown("---")
     
-    with st.expander("📖 **Beginner ASL Signing Guide & Demonstration Cheat Sheet**", expanded=True):
+    with st.expander("**Beginner ASL Signing Guide & Demonstration Cheat Sheet**", expanded=True):
         st.markdown("""
         <div style="font-size: 0.9rem; color: #cbd5e1; margin-bottom: 12px;">
             Here is the exact gesture cheat sheet tailored for new signers. Take your time to position your hand and hold the gesture steadily in view of the camera:
@@ -1384,7 +1383,7 @@ if mode == "📹 Live Camera (Primary)":
         c1, c2, c3 = st.columns(3)
         with c1:
             st.markdown("""
-            #### 🙋 Greetings & Essentials
+            #### Greetings & Essentials
             - **`hello`**: Open flat palm raised near the forehead / temple (like a salute).
             - **`bye`**: Open flat palm held at chest/shoulder height and waved gently side-to-side.
             - **`thank you`**: Flat open hand touching chin/lips, then moving forward/downward toward camera.
@@ -1395,7 +1394,7 @@ if mode == "📹 Live Camera (Primary)":
             """)
         with c2:
             st.markdown("""
-            #### 🗣️ Everyday Expressions
+            #### Everyday Expressions
             - **`where`**: Index finger pointing upright in front of chest, wagging gently side-to-side.
             - **`go`**: Index finger pointing forward into space.
             - **`eat`**: Tapered fingers/pinch brought to tap on the lips.
@@ -1406,7 +1405,7 @@ if mode == "📹 Live Camera (Primary)":
             """)
         with c3:
             st.markdown("""
-            #### 🏷️ 95-Class Vocabulary Stars
+            #### 95-Class Vocabulary Stars
             - **`duck`**: Index finger and thumb pinching open and closed like a duck beak at chest/chin.
             - **`brother`**: Dominant L / index shape starting at forehead moving down.
             - **`airplane`**: "I Love You" / Y-hand (thumb & pinky extended) gliding in the air.
@@ -1418,14 +1417,14 @@ if mode == "📹 Live Camera (Primary)":
 
 
 # MODE 2: TEST MY SIGN
-elif mode == "🎯 Test My Sign":
-    st.markdown("### 🎯 Interactive Sign Verification & Practice")
+elif mode == "Test My Sign":
+    st.markdown("### Interactive Sign Verification & Practice")
     st.markdown("Select any target sign from the 95-class vocabulary. The neural model will verify your temporal gesture and track your performance in real time.")
     
     col_t1, col_t2 = st.columns([5, 7])
     with col_t1:
         target_sign = st.selectbox(
-            "🎯 Select Target Sign to Practice / Verify:",
+            "Select Target Sign to Practice / Verify:",
             sorted(list(class_names.values())),
             index=sorted(list(class_names.values())).index("apple") if "apple" in class_names.values() else 0
         )
@@ -1440,10 +1439,10 @@ elif mode == "🎯 Test My Sign":
         </div>
         """, unsafe_allow_html=True)
         
-        st.markdown("#### 🎬 Test via Uploaded Video")
+        st.markdown("#### Test via Uploaded Video")
         test_video = st.file_uploader("Upload video of your sign", type=["mp4", "webm", "mov", "avi"], key="test_my_sign_vid")
         if test_video is not None:
-            if st.button("🚀 Verify Sign Match", type="primary", use_container_width=True):
+            if st.button("Verify Sign Match", type="primary", use_container_width=True):
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
                     tmp.write(test_video.read())
                     tmp_path = tmp.name
@@ -1457,9 +1456,9 @@ elif mode == "🎯 Test My Sign":
                     
                     st.markdown("---")
                     if is_match:
-                        st.success(f"🎉 **PERFECT MATCH!** Model recognized **{pred_class.upper()}** with {res['confidence']*100:.1f}% confidence!")
+                        st.success(f"**PERFECT MATCH!** Model recognized **{pred_class.upper()}** with {res['confidence']*100:.1f}% confidence!")
                     else:
-                        st.warning(f"⚠️ **MISMATCH**: Model predicted **{pred_class.upper()}** ({res['confidence']*100:.1f}% confidence) instead of target **{target_sign.upper()}**.")
+                        st.warning(f"**MISMATCH**: Model predicted **{pred_class.upper()}** ({res['confidence']*100:.1f}% confidence) instead of target **{target_sign.upper()}**.")
                     
                     render_prediction_results(res)
                 finally:
@@ -1467,16 +1466,16 @@ elif mode == "🎯 Test My Sign":
                         os.remove(tmp_path)
 
     with col_t2:
-        st.markdown("#### 📹 Live Video Practice Mode")
+        st.markdown("#### Live Video Practice Mode")
         st.markdown(f"Position yourself in front of the camera and perform **{target_sign.upper()}**. The real-time ASLTransformer rolling buffer will evaluate your motion.")
         st.components.v1.html(live_camera_html, height=560)
 
 # MODE 3: VIDEO UPLOAD
-elif mode == "🎬 Video Upload":
+elif mode == "Video Upload":
     col_v1, col_v2 = st.columns([6, 6])
     
     with col_v1:
-        st.markdown("### 🎬 Upload ASL Video")
+        st.markdown("### Upload ASL Video")
         st.markdown("Upload a video clip (.mp4, .webm, .mov, .avi). The system processes all frames, normalizes 74 landmarks, computes velocity, and predicts the sign using `ASLTransformer`.")
         
         uploaded_video = st.file_uploader("Choose an ASL video file", type=["mp4", "webm", "mov", "avi"])
@@ -1486,7 +1485,7 @@ elif mode == "🎬 Video Upload":
             
     with col_v2:
         if uploaded_video is not None:
-            if st.button("🚀 Analyze Video & Recognize Sign", type="primary", use_container_width=True):
+            if st.button("Analyze Video & Recognize Sign", type="primary", use_container_width=True):
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
                     tmp.write(uploaded_video.read())
                     tmp_path = tmp.name
@@ -1511,12 +1510,12 @@ elif mode == "🎬 Video Upload":
             st.info("Upload a video on the left to start temporal ASL analysis.")
 
 # MODE 4: IMAGE UPLOAD
-elif mode == "🖼️ Image Upload":
+elif mode == "Image Upload":
     col_i1, col_i2 = st.columns([6, 6])
     
     with col_i1:
-        st.markdown("### 🖼️ Upload ASL Image")
-        st.warning("⚠️ **Note on Image Mode**: The trained model is fundamentally temporal (64 frames). Image mode provides an approximate pose-based prediction. For best results, use Live Camera or Video.")
+        st.markdown("### Upload ASL Image")
+        st.warning("**Note on Image Mode**: The trained model is fundamentally temporal (64 frames). Image mode provides an approximate pose-based prediction. For best results, use Live Camera or Video.")
         
         uploaded_img = st.file_uploader("Choose a photo of an ASL sign", type=["jpg", "jpeg", "png", "webp"])
         if uploaded_img is not None:
@@ -1524,7 +1523,7 @@ elif mode == "🖼️ Image Upload":
             
     with col_i2:
         if uploaded_img is not None:
-            if st.button("🔍 Analyze Image Pose", type="primary", use_container_width=True):
+            if st.button("Analyze Image Pose", type="primary", use_container_width=True):
                 bytes_data = uploaded_img.read()
                 nparr = np.frombuffer(bytes_data, np.uint8)
                 cv_img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -1540,16 +1539,16 @@ elif mode == "🖼️ Image Upload":
             st.info("Upload an image on the left to inspect hand pose landmarks.")
 
 # MODE 5: MODEL DIAGNOSTICS
-elif mode == "🔬 Model Diagnostics":
-    st.markdown("### 🔬 Model Diagnostic & Verification Center")
+elif mode == "Model Diagnostics":
+    st.markdown("### Model Diagnostic & Verification Center")
     st.markdown("Inspect the fine-tuned model checkpoint, verify tensor shapes, audit training/inference preprocessing, view real test evaluation metrics, and inspect the confusion matrix.")
     
     tab_eval, tab_perf, tab_matrix, tab_inspect, tab_mapping = st.tabs([
-        "🧪 Test Inference", 
-        "📊 95-Class Performance Audit", 
-        "🧩 Confusion Matrix", 
-        "🔍 Architecture & Tensor Audit", 
-        "📋 Class ID Mapping (0..94)"
+        "Test Inference", 
+        "95-Class Performance Audit", 
+        "Confusion Matrix", 
+        "Architecture & Tensor Audit", 
+        "Class ID Mapping (0..94)"
     ])
     
     with tab_eval:
@@ -1563,7 +1562,7 @@ elif mode == "🔬 Model Diagnostics":
                 st.video(diag_video)
             
             with col_d2:
-                if st.button("⚡ Run Diagnostic Inference", type="primary", use_container_width=True):
+                if st.button("Run Diagnostic Inference", type="primary", use_container_width=True):
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
                         tmp.write(diag_video.read())
                         tmp_path = tmp.name
@@ -1578,7 +1577,7 @@ elif mode == "🔬 Model Diagnostics":
                         pred_result = engine.predict_sample(sample_696, top_k=5)
                         t_infer = (time.perf_counter() - t1) * 1000
                         
-                        st.markdown("##### 📊 Execution Diagnostics")
+                        st.markdown("##### Execution Diagnostics")
                         m1, m2, m3, m4 = st.columns(4)
                         m1.metric("Raw Frames", len(timeline))
                         m2.metric("Resampled", f"64 × 696")
@@ -1588,7 +1587,7 @@ elif mode == "🔬 Model Diagnostics":
                         st.markdown("---")
                         render_prediction_results(pred_result)
                         
-                        with st.expander("🔍 Inspect Internal 696-Dim Tensor Sample", expanded=False):
+                        with st.expander("Inspect Internal 696-Dim Tensor Sample", expanded=False):
                             st.write(f"**Tensor Shape:** `(1, 64, 696)`")
                             st.write(f"**Base Features Shape (0..347):** `(64, 348)`")
                             st.write(f"**Velocity Features Shape (348..695):** `(64, 348)`")
@@ -1602,7 +1601,7 @@ elif mode == "🔬 Model Diagnostics":
                             os.remove(tmp_path)
 
     with tab_perf:
-        st.markdown("#### 📊 Model Training Benchmark & Origin")
+        st.markdown("#### Model Training Benchmark & Origin")
         st.markdown("""
         - **Training Environment**: Google Colab / KaggleHub GPU Environment
         - **Dataset**: Kaggle Google Isolated Sign Language Recognition (`kagglehub: google/asl-signs`)
@@ -1611,14 +1610,14 @@ elif mode == "🔬 Model Diagnostics":
         - **Input Representation**: 64 Frames × 696 Dimensions (348 Normalized Landmarks + 348 Velocity)
         - **Local Dataset Status**: Raw training/test parquet files (~54 GB) reside on Kaggle/Google Drive and are not stored in this local deployment.
         """)
-        st.info("💡 **Local Offline Testing**: To evaluate real videos on this machine, upload any ASL video (.mp4/.webm) in the **'🧪 Test Inference'** tab above or use **'🎯 Test My Sign'**.")
+        st.info("**Local Offline Testing**: To evaluate real videos on this machine, upload any ASL video (.mp4/.webm) in the **'Test Inference'** tab above or use **'Test My Sign'**.")
 
     with tab_matrix:
-        st.markdown("#### 🧩 Confusion Matrix & Evaluation Status")
-        st.info("ℹ️ **Full 95×95 Confusion Matrix**: The complete test-set matrix was computed during the Google Colab training run on cloud GPU. To run a full local batch evaluation, download the test split parquet files or test individual signs via the **'🧪 Test Inference'** tab.")
+        st.markdown("#### Confusion Matrix & Evaluation Status")
+        st.info("**Full 95×95 Confusion Matrix**: The complete test-set matrix was computed during the Google Colab training run on cloud GPU. To run a full local batch evaluation, download the test split parquet files or test individual signs via the **'Test Inference'** tab.")
                             
     with tab_inspect:
-        st.markdown("#### 🧩 Checkpoint & Architectural Audit")
+        st.markdown("#### Checkpoint & Architectural Audit")
         
         c1, c2 = st.columns(2)
         with c1:
@@ -1648,7 +1647,7 @@ elif mode == "🔬 Model Diagnostics":
             """.format(device.type.upper() if model_loaded else "N/A"))
             
     with tab_mapping:
-        st.markdown("#### 📋 Exact Trained Class Mapping (`class_id → label`)")
+        st.markdown("#### Exact Trained Class Mapping (`class_id → label`)")
         st.caption("Extracted directly from the PyTorch model checkpoint dictionary without manual modification.")
         
         map_search = st.text_input("Filter classes:", placeholder="Search class name...", key="map_search")
@@ -1661,11 +1660,11 @@ elif mode == "🔬 Model Diagnostics":
                 st.markdown(f"`{cid:02d}` → **{cname}**")
 
 # MODE 6: 95-SIGN DICTIONARY
-elif mode == "📖 95-Sign Dictionary":
-    st.markdown("### 📖 Supported 95 ASL Vocabulary Signs")
+elif mode == "95-Sign Dictionary":
+    st.markdown("### Supported 95 ASL Vocabulary Signs")
     st.markdown("The `ASLTransformer` model is trained and evaluated to recognize these **95 isolated American Sign Language vocabulary gestures**.")
     
-    search_q = st.text_input("🔍 Search vocabulary words:", placeholder="e.g., hello, apple, book, fine, thank you...")
+    search_q = st.text_input("Search vocabulary words:", placeholder="e.g., hello, apple, book, fine, thank you...")
     
     all_classes = [class_names[k] for k in sorted(class_names.keys())]
     if search_q:
