@@ -750,7 +750,7 @@ if mode == "📹 Live Camera (Primary)":
           const topList = resData.top_predictions || [];
           topList.forEach((item, idx) => {{
             const pct = (item.confidence * 100).toFixed(1);
-            const comp = item.rule_compatibility !== undefined ? ` [Rule: ${(item.rule_compatibility*100).toFixed(0)}%]` : '';
+            const comp = item.rule_compatibility !== undefined ? ` [Rule: ${{(item.rule_compatibility*100).toFixed(0)}}%]` : '';
             html += `
               <div class="bar-item">
                 <div class="bar-header">
