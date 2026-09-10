@@ -47,9 +47,11 @@ test_synthetic.*
 # Environment & IDE
 .env
 .env.local
-.vscode/
-.idea/
-*.swp
-*.swo
 .DS_Store
 Thumbs.db
+
+# Data & Large Dataset Files
+data/
+*.parquet
+*.parquet.zip
+*.bin

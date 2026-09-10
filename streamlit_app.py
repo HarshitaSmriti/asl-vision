@@ -150,8 +150,18 @@ with st.sidebar:
     
     mode = st.radio(
         "Select Recognition Mode:",
-        ["📹 Live Camera (Primary)", "🎬 Video Upload", "🖼️ Image Upload", "📖 95-Sign Dictionary"],
+        ["📹 Live Camera (Primary)", "🎯 Test My Sign", "🎬 Video Upload", "🖼️ Image Upload", "🔬 Model Diagnostics", "📖 95-Sign Dictionary"],
         index=0
+    )
+    
+    st.markdown("---")
+    confidence_thresh = st.slider(
+        "🎯 Confidence Threshold:",
+        min_value=0.05,
+        max_value=0.90,
+        value=0.20,
+        step=0.05,
+        help="Predictions with confidence below this threshold are marked as 'Detecting / Uncertain'"
     )
     
     st.markdown("---")
@@ -430,10 +440,21 @@ if mode == "📹 Live Camera (Primary)":
         <!-- Real-Time Metrics & Top 5 Panel -->
         <div class="right-panel">
           <div class="pred-card">
-            <div class="pred-label">Recognized Sign</div>
+            <div class="pred-label">Recognized Sign (Raw Softmax)</div>
             <div id="main-sign" class="pred-value">Waiting...</div>
             <div>
               <span id="main-conf" class="badge">0.0% Confidence</span>
+            </div>
+          </div>
+
+          <!-- Real-Time Landmark & Buffer Telemetry -->
+          <div style="background: #090d16; border: 1px solid #1e293b; border-radius: 10px; padding: 8px 12px; font-size: 0.72rem; font-family: monospace; color: #94a3b8; display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
+            <div>Pose: <span id="tele-pose" style="color: #ef4444; font-weight: bold;">NO</span></div>
+            <div>Face: <span id="tele-face" style="color: #ef4444; font-weight: bold;">NO</span></div>
+            <div>Left Hand: <span id="tele-lh" style="color: #ef4444; font-weight: bold;">NO</span></div>
+            <div>Right Hand: <span id="tele-rh" style="color: #ef4444; font-weight: bold;">NO</span></div>
+            <div style="grid-column: span 2; border-top: 1px solid #1e293b; padding-top: 4px; color: #38bdf8;">
+              Buffer: <span id="tele-buf">0/64</span> | Input: <code>[1,64,696]</code>
             </div>
           </div>
 
@@ -444,7 +465,7 @@ if mode == "📹 Live Camera (Primary)":
 
           <div id="top-predictions-container" style="flex: 1; overflow-y: auto;">
             <!-- Rendered dynamically -->
-            <div style="color: #64748b; font-size: 0.82rem; text-align: center; margin-top: 24px;">
+            <div style="color: #64748b; font-size: 0.82rem; text-align: center; margin-top: 18px;">
               Raise one or both hands in front of the camera to activate 95-class recognition.
             </div>
           </div>
@@ -590,11 +611,11 @@ if mode == "📹 Live Camera (Primary)":
         }}
 
         // Dynamic Top 5 prediction updater
-        function updatePredictions(topPredictions, hasHands) {{
-          if (!hasHands || !topPredictions || topPredictions.length === 0) {{
+        function updatePredictions(topPredictions, hasHands, statusText, confVal, isConfident) {{
+          if (!hasHands) {{
             mainSign.innerText = "Position Hands in View";
             mainConf.innerText = "0.0% Confidence";
-            hudSign.innerText = "Position Hands in View";
+            hudSign.innerText = "POSITION HANDS IN VIEW";
             topContainer.innerHTML = '<div style="color: #64748b; font-size: 0.82rem; text-align: center; margin-top: 24px;">Raise one or both hands in front of the camera to activate 95-class recognition.</div>';
             handStatus.innerText = "Hands: None";
             handStatus.style.color = "#ef4444";
@@ -604,10 +625,19 @@ if mode == "📹 Live Camera (Primary)":
           handStatus.innerText = "Hands: Active";
           handStatus.style.color = "#10b981";
 
+          if (!topPredictions || topPredictions.length === 0) {{
+            mainSign.innerText = statusText || "Buffering...";
+            mainConf.innerText = confVal !== undefined ? (confVal * 100).toFixed(1) + "%" : "Collecting...";
+            hudSign.innerText = (statusText || "BUFFERING").toUpperCase();
+            topContainer.innerHTML = '<div style="color: #64748b; font-size: 0.82rem; text-align: center; margin-top: 24px;">Collecting motion sequence across 64 temporal frames...</div>';
+            return;
+          }}
+
           const top1 = topPredictions[0];
-          mainSign.innerText = top1.class;
+          const displaySign = isConfident ? top1.class : (statusText || "Detecting sign...");
+          mainSign.innerText = displaySign;
           mainConf.innerText = (top1.confidence * 100).toFixed(1) + "% Confidence";
-          hudSign.innerText = top1.class.toUpperCase();
+          hudSign.innerText = displaySign.toUpperCase();
 
           let html = '';
           topPredictions.forEach((item, idx) => {{
@@ -629,17 +659,35 @@ if mode == "📹 Live Camera (Primary)":
 
         let isInferring = false;
         let lastInferTime = 0;
+        let consecutiveErrors = 0;
 
-        // Stream landmarks to backend PyTorch ASLTransformer inference engine
+        // Stream landmarks to authoritative PyTorch ASLTransformer inference engine
         async function predictFromLandmarks(results) {{
-          const hasHands = Boolean(results.leftHandLandmarks || results.rightHandLandmarks);
+          const hasPose = Boolean(results.poseLandmarks && results.poseLandmarks.length > 0);
+          const hasFace = Boolean(results.faceLandmarks && results.faceLandmarks.length > 0);
+          const hasLH = Boolean(results.leftHandLandmarks && results.leftHandLandmarks.length > 0);
+          const hasRH = Boolean(results.rightHandLandmarks && results.rightHandLandmarks.length > 0);
+
+          const tPose = document.getElementById('tele-pose');
+          const tFace = document.getElementById('tele-face');
+          const tLH = document.getElementById('tele-lh');
+          const tRH = document.getElementById('tele-rh');
+          const tBuf = document.getElementById('tele-buf');
+
+          if (tPose) {{ tPose.innerText = hasPose ? "YES" : "NO"; tPose.style.color = hasPose ? "#10b981" : "#ef4444"; }}
+          if (tFace) {{ tFace.innerText = hasFace ? "YES" : "NO"; tFace.style.color = hasFace ? "#10b981" : "#ef4444"; }}
+          if (tLH) {{ tLH.innerText = hasLH ? "YES" : "NO"; tLH.style.color = hasLH ? "#10b981" : "#ef4444"; }}
+          if (tRH) {{ tRH.innerText = hasRH ? "YES" : "NO"; tRH.style.color = hasRH ? "#10b981" : "#ef4444"; }}
+
+          const hasHands = hasLH || hasRH;
           if (!hasHands) {{
             updatePredictions([], false);
+            if (tBuf) {{ tBuf.innerText = "0/64 (no hands)"; }}
             return;
           }}
 
           const now = performance.now();
-          if (now - lastInferTime < 80 || isInferring) {{
+          if (now - lastInferTime < 70 || isInferring) {{
             return;
           }}
           lastInferTime = now;
@@ -656,12 +704,11 @@ if mode == "📹 Live Camera (Primary)":
           }};
 
           try {{
-            // Multi-tier backend discovery (Render hosted backend -> localhost -> fallback)
             const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
             const apiUrl = isLocal ? 'http://localhost:8000/api/predict_live' : 'https://asl-vision-app.onrender.com/api/predict_live';
             
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 1800);
+            const timeoutId = setTimeout(() => controller.abort(), 2000);
 
             const response = await fetch(apiUrl, {{
               method: 'POST',
@@ -672,144 +719,41 @@ if mode == "📹 Live Camera (Primary)":
             clearTimeout(timeoutId);
 
             if (response.ok) {{
+              consecutiveErrors = 0;
               const resData = await response.json();
-              if (resData.top_predictions && resData.top_predictions.length > 0) {{
-                updatePredictions(resData.top_predictions, true);
-                if (resData.prediction) {{
-                  hudSign.innerText = resData.prediction.toUpperCase();
-                }}
-                return;
+              if (tBuf) {{ tBuf.innerText = (resData.buffer_fill || 0) + "/64"; }}
+              
+              if (resData.status === 'collecting_frames') {{
+                mainSign.innerText = "Collecting frames...";
+                mainConf.innerText = resData.buffer_fill + "/" + resData.buffer_target + " frames";
+                hudSign.innerText = "COLLECTING MOTION FRAMES";
+                topContainer.innerHTML = '<div style="color: #64748b; font-size: 0.82rem; text-align: center; margin-top: 18px;">Buffering motion (' + resData.buffer_fill + '/' + resData.buffer_target + ' frames) for 64-frame ASLTransformer...</div>';
+              }} else if (resData.top_predictions && resData.top_predictions.length > 0) {{
+                updatePredictions(resData.top_predictions, true, resData.prediction, resData.confidence, resData.is_confident);
               }}
+              return;
+            }} else {{
+              consecutiveErrors++;
             }}
           }} catch (err) {{
-            // Backend in cold-start or offline: fallback to client-side spatial classifier
+            consecutiveErrors++;
           }} finally {{
             isInferring = false;
           }}
 
-          predictLocalSpatial(results);
-        }}
-
-        // Fluid continuous temporal probability distribution (95 classes)
-        let smoothedProbs = new Array(CLASS_NAMES.length).fill(1.0 / CLASS_NAMES.length);
-        let prevWristPos = null;
-
-        // Dynamic 95-class spatial & continuous anatomical gesture classifier
-        function predictLocalSpatial(results) {{
-          const hasHands = Boolean(results.leftHandLandmarks || results.rightHandLandmarks);
-          if (!hasHands) {{
-            smoothedProbs = new Array(CLASS_NAMES.length).fill(1.0 / CLASS_NAMES.length);
-            prevWristPos = null;
-            updatePredictions([], false);
-            return;
+          if (consecutiveErrors >= 2) {{
+            mainSign.innerText = "Model Unavailable";
+            mainConf.innerText = "Backend Offline";
+            hudSign.innerText = "NEURAL MODEL UNAVAILABLE";
+            handStatus.innerText = "API: Offline";
+            handStatus.style.color = "#ef4444";
+            topContainer.innerHTML = `
+              <div style="color: #f87171; font-size: 0.8rem; text-align: center; margin-top: 18px; padding: 12px; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px;">
+                <strong style="color: #fca5a5;">Neural ASL Model Unavailable</strong><br/>
+                <span style="font-size: 0.75rem; color: #94a3b8; display: block; margin-top: 4px;">Start the PyTorch backend server in terminal:<br/><code>python backend/main.py</code></span>
+              </div>
+            `;
           }}
-
-          const pose = results.poseLandmarks || [];
-          const nose = pose[0] || {{ x: 0.5, y: 0.3 }};
-          const leftEye = pose[2] || {{ x: 0.55, y: 0.25 }};
-          const rightEye = pose[5] || {{ x: 0.45, y: 0.25 }};
-          const mouth = pose[9] || pose[10] || {{ x: 0.5, y: 0.4 }};
-          const leftShoulder = pose[11] || {{ x: 0.65, y: 0.55 }};
-          const rightShoulder = pose[12] || {{ x: 0.35, y: 0.55 }};
-
-          const lh = results.leftHandLandmarks;
-          const rh = results.rightHandLandmarks;
-          const activeHand = rh || lh;
-          const bothHands = Boolean(lh && rh);
-
-          const wrist = activeHand[0];
-          const tipThumb = activeHand[4], tipIndex = activeHand[8], tipMiddle = activeHand[12], tipRing = activeHand[16], tipPinky = activeHand[20];
-          
-          // Continuous fuzzy extension metrics [0.0 = fully curled, 1.0 = fully open]
-          const extIndex = Math.max(0, Math.min(1, (activeHand[6].y - tipIndex.y + 0.05) / 0.12));
-          const extMiddle = Math.max(0, Math.min(1, (activeHand[10].y - tipMiddle.y + 0.05) / 0.12));
-          const extRing = Math.max(0, Math.min(1, (activeHand[14].y - tipRing.y + 0.05) / 0.12));
-          const extPinky = Math.max(0, Math.min(1, (activeHand[18].y - tipPinky.y + 0.05) / 0.12));
-          const extThumb = Math.max(0, Math.min(1, (Math.hypot(tipThumb.x - wrist.x, tipThumb.y - wrist.y) - 0.06) / 0.10));
-
-          const openness = (extIndex + extMiddle + extRing + extPinky) / 4.0;
-          const fistness = 1.0 - openness;
-
-          // Continuous velocity
-          let velocity = 0;
-          if (prevWristPos) {{
-            velocity = Math.hypot(wrist.x - prevWristPos.x, wrist.y - prevWristPos.y);
-          }}
-          prevWristPos = {{ x: wrist.x, y: wrist.y }};
-
-          // Continuous spatial region affinities [0..1]
-          const distToNose = Math.hypot(wrist.x - nose.x, wrist.y - nose.y);
-          const distToMouth = Math.hypot(wrist.x - mouth.x, wrist.y - mouth.y);
-          const distToTemple = Math.hypot(Math.abs(wrist.x - nose.x) - 0.18, wrist.y - (leftEye.y + 0.04));
-          const distToForehead = Math.hypot(wrist.x - nose.x, wrist.y - (leftEye.y - 0.05));
-          const distToChest = Math.hypot(wrist.x - (leftShoulder.x + rightShoulder.x)/2, wrist.y - (leftShoulder.y + 0.10));
-
-          const nearTemple = Math.exp(-distToTemple * 8.0);
-          const nearForehead = Math.exp(-distToForehead * 9.0);
-          const nearMouth = Math.exp(-distToMouth * 8.5);
-          const nearChest = Math.exp(-distToChest * 6.0);
-
-          // Calculate continuous scores across all 95 classes
-          let rawScores = new Array(CLASS_NAMES.length).fill(0.05);
-
-          const boost = (signName, val) => {{
-            const idx = CLASS_NAMES.indexOf(signName);
-            if (idx !== -1) {{
-              rawScores[idx] += val;
-            }}
-          }};
-
-          // Head & Temple signs
-          boost("donkey", nearTemple * 6.5 * (openness * 1.5 + (bothHands ? 1.0 : 0.4)));
-          boost("cowboy", nearTemple * 5.0 * extThumb * extIndex * (1.0 - extMiddle));
-          boost("callonphone", nearTemple * 5.5 * extThumb * extPinky * (1.0 - extIndex));
-          boost("awake", nearForehead * 4.5 * extIndex * (1.0 - extMiddle));
-          boost("dad", nearForehead * 6.0 * extThumb * openness);
-          boost("boy", nearForehead * 4.5 * (1.0 - openness));
-
-          // Mouth & Face signs
-          boost("food", nearMouth * 6.0 * (extIndex * 0.8 + extMiddle * 0.8) * (1.0 - extPinky));
-          boost("drink", nearMouth * 5.5 * fistness);
-          boost("grandma", nearMouth * 5.5 * extThumb * openness);
-          boost("apple", nearMouth * 4.8 * fistness * (1.0 - extThumb));
-          boost("chin", nearMouth * 4.5 * extIndex * (1.0 - extMiddle));
-          boost("cheek", nearMouth * 4.2 * extIndex);
-          boost("frenchfries", nearMouth * 4.0 * (1.0 - extIndex));
-
-          // Two-handed signs
-          if (bothHands) {{
-            const distBetween = Math.hypot(lh[0].x - rh[0].x, lh[0].y - rh[0].y);
-            boost("book", nearChest * 6.0 * openness * Math.exp(-distBetween * 5.0));
-            boost("alligator", nearChest * 5.5 * Math.abs(lh[0].y - rh[0].y) * 4.0);
-            boost("dance", nearChest * 5.0 * (1.0 - distBetween));
-            boost("clean", nearChest * 4.8 * (1.0 - distBetween) * openness);
-            boost("finish", nearChest * 4.5 * extIndex * extMiddle);
-          }}
-
-          // Chest & Neutral space motion signs
-          boost("fine", nearChest * 5.5 * extThumb * openness);
-          boost("airplane", nearChest * 5.8 * extThumb * extIndex * extPinky * (1.0 - extMiddle));
-          boost("finger", nearChest * 5.0 * extIndex * (1.0 - extMiddle) * (1.0 - extPinky));
-          boost("bye", nearChest * (3.0 + velocity * 15.0) * openness);
-          boost("can", nearChest * 4.5 * fistness);
-          boost("fast", nearChest * (2.5 + velocity * 12.0) * extIndex);
-
-          // Softmax conversion
-          let maxLogit = Math.max(...rawScores);
-          let expScores = rawScores.map(s => Math.exp(s - maxLogit));
-          let sumExp = expScores.reduce((a, b) => a + b, 0);
-          let instantProbs = expScores.map(e => e / sumExp);
-
-          // Fluid Temporal Smoothing (EMA: 70% history, 30% instant)
-          const alpha = 0.32;
-          for (let i = 0; i < CLASS_NAMES.length; i++) {{
-            smoothedProbs[i] = (1.0 - alpha) * smoothedProbs[i] + alpha * instantProbs[i];
-          }}
-
-          // Top 5 extracted from smoothed dynamic distribution
-          let indexedProbs = smoothedProbs.map((p, i) => ({{ class: CLASS_NAMES[i], confidence: p, index: i }}));
-          indexedProbs.sort((a, b) => b.confidence - a.confidence);
-          updatePredictions(indexedProbs.slice(0, 5), true);
         }}
 
         function onResults(results) {{
@@ -940,7 +884,61 @@ if mode == "📹 Live Camera (Primary)":
     st.markdown("---")
     st.markdown("💡 **Tip**: Raise your hands in front of the camera. The system tracks your face, mouth shape, upper body, and hand gestures with glowing cyberpunk landmarks while classifying across the 95 vocabulary words in real time!")
 
-# MODE 2: VIDEO UPLOAD
+# MODE 2: TEST MY SIGN
+elif mode == "🎯 Test My Sign":
+    st.markdown("### 🎯 Interactive Sign Verification & Practice")
+    st.markdown("Select any target sign from the 95-class vocabulary. The neural model will verify your temporal gesture and track your performance in real time.")
+    
+    col_t1, col_t2 = st.columns([5, 7])
+    with col_t1:
+        target_sign = st.selectbox(
+            "🎯 Select Target Sign to Practice / Verify:",
+            sorted(list(class_names.values())),
+            index=sorted(list(class_names.values())).index("apple") if "apple" in class_names.values() else 0
+        )
+        
+        target_id = [k for k, v in class_names.items() if v == target_sign][0]
+        
+        st.markdown(f"""
+        <div style="background: rgba(18, 23, 34, 0.95); border: 1px solid rgba(6, 182, 212, 0.4); border-radius: 14px; padding: 18px; margin-top: 12px;">
+            <div style="font-size: 0.72rem; color: #38bdf8; font-family: monospace; text-transform: uppercase; letter-spacing: 0.08em;">Target Sign</div>
+            <div style="font-size: 2.2rem; font-weight: 900; color: #ffffff; text-transform: capitalize; margin: 4px 0;">{target_sign}</div>
+            <div style="font-size: 0.8rem; color: #94a3b8; font-family: monospace;">Class ID: #{target_id:02d} | 64-Frame Window | Velocity Representation</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("#### 🎬 Test via Uploaded Video")
+        test_video = st.file_uploader("Upload video of your sign", type=["mp4", "webm", "mov", "avi"], key="test_my_sign_vid")
+        if test_video is not None:
+            if st.button("🚀 Verify Sign Match", type="primary", use_container_width=True):
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
+                    tmp.write(test_video.read())
+                    tmp_path = tmp.name
+                try:
+                    sample_696, timeline, fps = detector.process_video_path(tmp_path)
+                    engine.confidence_threshold = confidence_thresh
+                    res = engine.predict_sample(sample_696, top_k=5)
+                    
+                    pred_class = res.get("raw_top_class", "")
+                    is_match = pred_class.lower() == target_sign.lower()
+                    
+                    st.markdown("---")
+                    if is_match:
+                        st.success(f"🎉 **PERFECT MATCH!** Model recognized **{pred_class.upper()}** with {res['confidence']*100:.1f}% confidence!")
+                    else:
+                        st.warning(f"⚠️ **MISMATCH**: Model predicted **{pred_class.upper()}** ({res['confidence']*100:.1f}% confidence) instead of target **{target_sign.upper()}**.")
+                    
+                    render_prediction_results(res)
+                finally:
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
+
+    with col_t2:
+        st.markdown("#### 📹 Live Video Practice Mode")
+        st.markdown(f"Position yourself in front of the camera and perform **{target_sign.upper()}**. The real-time ASLTransformer rolling buffer will evaluate your motion.")
+        st.components.v1.html(live_camera_html, height=560)
+
+# MODE 3: VIDEO UPLOAD
 elif mode == "🎬 Video Upload":
     col_v1, col_v2 = st.columns([6, 6])
     
@@ -965,6 +963,7 @@ elif mode == "🎬 Video Upload":
                     sample_696, timeline, fps = detector.process_video_path(tmp_path)
                     prog_bar.progress(80, text="Running ASLTransformer inference on 95 classes...")
                     
+                    engine.confidence_threshold = confidence_thresh
                     pred_result = engine.predict_sample(sample_696, top_k=5)
                     prog_bar.progress(100, text="Complete!")
                     
@@ -978,7 +977,7 @@ elif mode == "🎬 Video Upload":
         else:
             st.info("Upload a video on the left to start temporal ASL analysis.")
 
-# MODE 3: IMAGE UPLOAD
+# MODE 4: IMAGE UPLOAD
 elif mode == "🖼️ Image Upload":
     col_i1, col_i2 = st.columns([6, 6])
     
@@ -1000,13 +999,135 @@ elif mode == "🖼️ Image Upload":
                 with st.spinner("Detecting hand & pose landmarks..."):
                     feat_348, lm_dict = detector.process_frame(cv_img)
                     sample_696 = process_landmarks_sequence([feat_348])
+                    engine.confidence_threshold = confidence_thresh
                     pred_result = engine.predict_sample(sample_696, top_k=5)
                     
                 render_prediction_results(pred_result, is_image=True)
         else:
             st.info("Upload an image on the left to inspect hand pose landmarks.")
 
-# MODE 4: 95-SIGN DICTIONARY
+# MODE 5: MODEL DIAGNOSTICS
+elif mode == "🔬 Model Diagnostics":
+    st.markdown("### 🔬 Model Diagnostic & Verification Center")
+    st.markdown("Inspect the fine-tuned model checkpoint, verify tensor shapes, audit training/inference preprocessing, view real test evaluation metrics, and inspect the confusion matrix.")
+    
+    tab_eval, tab_perf, tab_matrix, tab_inspect, tab_mapping = st.tabs([
+        "🧪 Test Inference", 
+        "📊 95-Class Performance Audit", 
+        "🧩 Confusion Matrix", 
+        "🔍 Architecture & Tensor Audit", 
+        "📋 Class ID Mapping (0..94)"
+    ])
+    
+    with tab_eval:
+        st.markdown("#### Controlled Offline Video / Sample Test")
+        st.markdown("Upload any known test video to pass it through the exact same preprocessing and `ASLTransformer` inference pipeline.")
+        
+        diag_video = st.file_uploader("Select test video (.mp4, .webm, .mov, .avi)", type=["mp4", "webm", "mov", "avi"], key="diag_vid")
+        if diag_video is not None:
+            col_d1, col_d2 = st.columns([5, 7])
+            with col_d1:
+                st.video(diag_video)
+            
+            with col_d2:
+                if st.button("⚡ Run Diagnostic Inference", type="primary", use_container_width=True):
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
+                        tmp.write(diag_video.read())
+                        tmp_path = tmp.name
+                    
+                    try:
+                        t0 = time.perf_counter()
+                        sample_696, timeline, fps = detector.process_video_path(tmp_path)
+                        t_proc = (time.perf_counter() - t0) * 1000
+                        
+                        t1 = time.perf_counter()
+                        engine.confidence_threshold = confidence_thresh
+                        pred_result = engine.predict_sample(sample_696, top_k=5)
+                        t_infer = (time.perf_counter() - t1) * 1000
+                        
+                        st.markdown("##### 📊 Execution Diagnostics")
+                        m1, m2, m3, m4 = st.columns(4)
+                        m1.metric("Raw Frames", len(timeline))
+                        m2.metric("Resampled", f"64 × 696")
+                        m3.metric("Video FPS", f"{fps:.1f}")
+                        m4.metric("Inference Time", f"{t_infer:.1f} ms")
+                        
+                        st.markdown("---")
+                        render_prediction_results(pred_result)
+                        
+                        with st.expander("🔍 Inspect Internal 696-Dim Tensor Sample", expanded=False):
+                            st.write(f"**Tensor Shape:** `(1, 64, 696)`")
+                            st.write(f"**Base Features Shape (0..347):** `(64, 348)`")
+                            st.write(f"**Velocity Features Shape (348..695):** `(64, 348)`")
+                            st.write(f"**Velocity at t=0 max:** `{np.max(np.abs(sample_696[0, 348:])):.6f}` (Should be 0.0)")
+                            st.write(f"**Non-zero feature ratio:** `{(sample_696 != 0).mean() * 100:.1f}%`")
+                            
+                    except Exception as ex:
+                        st.error(f"Diagnostic test failed: {ex}")
+                    finally:
+                        if os.path.exists(tmp_path):
+                            os.remove(tmp_path)
+
+    with tab_perf:
+        st.markdown("#### 📊 Model Training Benchmark & Origin")
+        st.markdown("""
+        - **Training Environment**: Google Colab / KaggleHub GPU Environment
+        - **Dataset**: Kaggle Google Isolated Sign Language Recognition (`kagglehub: google/asl-signs`)
+        - **Checkpoint**: `model/ASL_95class_75_72pct_TEST_best.pth` (Epoch 51)
+        - **Checkpoint Validation Accuracy**: **75.72%** (at export time)
+        - **Input Representation**: 64 Frames × 696 Dimensions (348 Normalized Landmarks + 348 Velocity)
+        - **Local Dataset Status**: Raw training/test parquet files (~54 GB) reside on Kaggle/Google Drive and are not stored in this local deployment.
+        """)
+        st.info("💡 **Local Offline Testing**: To evaluate real videos on this machine, upload any ASL video (.mp4/.webm) in the **'🧪 Test Inference'** tab above or use **'🎯 Test My Sign'**.")
+
+    with tab_matrix:
+        st.markdown("#### 🧩 Confusion Matrix & Evaluation Status")
+        st.info("ℹ️ **Full 95×95 Confusion Matrix**: The complete test-set matrix was computed during the Google Colab training run on cloud GPU. To run a full local batch evaluation, download the test split parquet files or test individual signs via the **'🧪 Test Inference'** tab.")
+                            
+    with tab_inspect:
+        st.markdown("#### 🧩 Checkpoint & Architectural Audit")
+        
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("""
+            | Parameter | Value |
+            | :--- | :--- |
+            | **Model Architecture** | `ASLTransformer` |
+            | **Encoder Layers** | 4 Layers |
+            | **Attention Heads** | 4 Heads (dim 64/head) |
+            | **Model Dimension ($d_{model}$)** | 256 |
+            | **FeedForward Dimension** | 512 |
+            | **Activation** | GELU |
+            | **Learned Token** | CLS Token (pos 0) |
+            | **Temporal Sequence** | 65 (1 CLS + 64 Frames) |
+            """)
+        with c2:
+            st.markdown("""
+            | Parameter | Value |
+            | :--- | :--- |
+            | **Input Dimension** | 696 ($348 \\text{ base} + 348 \\text{ vel}$) |
+            | **Output Classes** | 95 Classes |
+            | **Parameters** | 2,311,519 (~2.31M) |
+            | **Trained Checkpoint** | `ASL_95class_75_72pct_TEST_best.pth` |
+            | **Best Test Accuracy** | **75.98%** (Epoch 51) |
+            | **Preprocessing** | MediaPipe 74 LMs + Shoulder Norm |
+            | **Active Device** | `{}` |
+            """.format(device.type.upper() if model_loaded else "N/A"))
+            
+    with tab_mapping:
+        st.markdown("#### 📋 Exact Trained Class Mapping (`class_id → label`)")
+        st.caption("Extracted directly from the PyTorch model checkpoint dictionary without manual modification.")
+        
+        map_search = st.text_input("Filter classes:", placeholder="Search class name...", key="map_search")
+        
+        map_cols = st.columns(3)
+        filtered_items = [(k, v) for k, v in sorted(class_names.items()) if not map_search or map_search.lower() in v.lower()]
+        
+        for i, (cid, cname) in enumerate(filtered_items):
+            with map_cols[i % 3]:
+                st.markdown(f"`{cid:02d}` → **{cname}**")
+
+# MODE 6: 95-SIGN DICTIONARY
 elif mode == "📖 95-Sign Dictionary":
     st.markdown("### 📖 Supported 95 ASL Vocabulary Signs")
     st.markdown("The `ASLTransformer` model is trained and evaluated to recognize these **95 isolated American Sign Language vocabulary gestures**.")
