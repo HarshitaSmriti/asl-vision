@@ -270,9 +270,9 @@ class GestureRuleEngine:
         zc_x = k["zero_crossings_x"]
         both_hands = k["both_hands"]
 
-        # 1. "thank you" (Strict: Open palm starting AT chin/lips and moving forward/downward away from chin)
-        if shape == "open_palm" and k["start_dist_to_chin"] < 0.40 and k["end_dist_to_chin"] > k["start_dist_to_chin"] + 0.12:
-            if dy > 0.04 or disp_mag > 0.16:
+        # 1. "thank you" (Strict: Single-hand open palm starting AT chin/lips and moving forward/downward away from chin)
+        if not both_hands and shape == "open_palm" and k["start_dist_to_chin"] < 0.35 and k["end_dist_to_chin"] > k["start_dist_to_chin"] + 0.10:
+            if dy > 0.04 or disp_mag > 0.15:
                 score = 0.90 + min(0.08, disp_mag * 0.2)
                 matches.append({"sign": "thank you", "score": min(score, 0.98), "category": "everyday"})
 
@@ -283,13 +283,13 @@ class GestureRuleEngine:
                 matches.append({"sign": "hello", "score": min(score, 0.98), "category": "everyday"})
 
         # 3. "stop" (Strict: Two hands, dominant chopping down into flat base palm)
-        if both_hands and shape == "open_palm" and k["two_hand_dist"] < 0.35:
-            if dy > 0.14:  # Sharp downward chop
-                matches.append({"sign": "stop", "score": 0.88, "category": "everyday"})
+        if both_hands and shape == "open_palm" and k["two_hand_dist"] < 0.55:
+            if dy > 0.10:  # Sharp downward chop
+                matches.append({"sign": "stop", "score": 0.92, "category": "everyday"})
 
-        # 4. "where" (Strict: Only index finger extended, pointing up, wagging horizontally)
-        if shape == "index_point" and ext["index"] > 0.65 and ext["middle"] < 0.30 and ext["pinky"] < 0.30:
-            if zc_x >= 3 and k["x_variance"] > 0.005:
+        # 4. "where" (Strict: Only index finger extended, pointing up, wagging horizontally at neutral height)
+        if not both_hands and shape == "index_point" and ext["index"] > 0.65 and ext["middle"] < 0.30 and ext["pinky"] < 0.30:
+            if not near_forehead and zc_x >= 3 and k["x_variance"] > 0.005 and k["x_variance"] >= k["y_variance"]:
                 matches.append({"sign": "where", "score": 0.90, "category": "everyday"})
 
         # 5. "what" (Strict: Two open hands, horizontal oscillation at waist/chest)
@@ -337,6 +337,13 @@ class GestureRuleEngine:
                 compat += 0.20
             else:
                 compat -= 0.30
+
+        # Chest signs (e.g. fine - open 5 on chest, not forehead)
+        if c == "fine":
+            if near_forehead:
+                compat -= 0.35
+            elif not near_chin and not near_forehead:
+                compat += 0.20
 
         # Two-handed signs
         if c in ["car", "boat", "book", "alligator", "dance", "clean"]:
