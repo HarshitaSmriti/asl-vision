@@ -84,12 +84,8 @@ class HybridASLInferenceEngine:
         top_neural_compat = top_neural["rule_compatibility"] if top_neural else 0.0
 
         # Decision Strategy:
-        # A. If everyday sign has very strong kinematic evidence (>=0.82) and neural 95-class model is not confident (<0.40)
-        #    OR everyday sign matches >=0.90 with near-zero 95-class compatibility:
-        if top_everyday and (
-            (top_everyday["score"] >= 0.82 and top_neural_conf < 0.40) or
-            (top_everyday["score"] >= 0.90 and top_neural_compat < 0.30)
-        ):
+        # A. Everyday sign is selected ONLY if strong kinematic rule fires (>=0.85) AND neural model is diffuse/uncertain (<0.35)
+        if top_everyday and top_everyday["score"] >= 0.85 and top_neural_conf < 0.35:
             final_sign = top_everyday["sign"]
             source = "everyday_gesture_layer"
             rule_compat = top_everyday["score"]
