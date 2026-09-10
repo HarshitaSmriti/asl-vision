@@ -304,8 +304,8 @@ if mode == "📹 Live Camera (Primary)":
     <html>
     <head>
       <meta charset="utf-8">
-      <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-      <script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic/holistic.js" crossorigin="anonymous"></script>
+      <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.4/camera_utils.js" crossorigin="anonymous"></script>
+      <script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic@0.5.1675471629/holistic.js" crossorigin="anonymous"></script>
       <style>
         * {{ box-sizing: border-box; margin: 0; padding: 0; }}
         body {{
@@ -904,26 +904,10 @@ if mode == "📹 Live Camera (Primary)":
         async function initHolisticCamera() {{
           hudSign.innerText = "Starting Camera...";
           try {{
-            // 1. Acquire video stream and play immediately
-            const stream = await navigator.mediaDevices.getUserMedia({{
-              video: {{ width: {{ ideal: 640 }}, height: {{ ideal: 480 }}, facingMode: "user" }},
-              audio: false
-            }});
-
-            videoElement.srcObject = stream;
-            videoElement.muted = true;
-            await videoElement.play();
-
-            hudSign.innerText = "Position Hands in View";
-            cameraRunning = true;
-            toggleCamBtn.innerText = "Stop Camera";
-            toggleCamBtn.className = "btn btn-primary";
-            liveDot.className = "status-dot status-active";
-
-            // 2. Initialize MediaPipe Holistic
+            // 1. Initialize MediaPipe Holistic
             if (!holistic) {{
               holistic = new Holistic({{
-                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${{file}}`
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/holistic@0.5.1675471629/${{file}}`
               }});
 
               holistic.setOptions({{
@@ -939,21 +923,29 @@ if mode == "📹 Live Camera (Primary)":
               holistic.onResults(onResults);
             }}
 
-            // 3. Continuous frame loop
-            let isLoopRunning = false;
-            const processFrame = async () => {{
-              if (cameraRunning && videoElement.readyState >= 2 && !isLoopRunning) {{
-                isLoopRunning = true;
-                try {{
-                  await holistic.send({{ image: videoElement }});
-                }} catch (err) {{}}
-                finally {{
-                  isLoopRunning = false;
-                }}
-              }}
-              requestAnimationFrame(processFrame);
-            }};
-            requestAnimationFrame(processFrame);
+            // 2. Initialize official MediaPipe Camera utility
+            if (!camera) {{
+              camera = new Camera(videoElement, {{
+                onFrame: async () => {{
+                  if (cameraRunning && videoElement.videoWidth > 0) {{
+                    try {{
+                      await holistic.send({{ image: videoElement }});
+                    }} catch (e) {{
+                      console.warn("Holistic send error:", e);
+                    }}
+                  }}
+                }},
+                width: 640,
+                height: 480
+              }});
+            }}
+
+            await camera.start();
+            hudSign.innerText = "Position Hands in View";
+            cameraRunning = true;
+            toggleCamBtn.innerText = "Stop Camera";
+            toggleCamBtn.className = "btn btn-primary";
+            liveDot.className = "status-dot status-active";
 
           }} catch (err) {{
             console.error("Camera Init Error:", err);
@@ -970,16 +962,19 @@ if mode == "📹 Live Camera (Primary)":
             toggleCamBtn.innerText = "Stop Camera";
             toggleCamBtn.className = "btn btn-primary";
             liveDot.className = "status-dot status-active";
-            if (!videoElement.srcObject) {{
+            if (!camera) {{
               await initHolisticCamera();
             }} else {{
-              videoElement.play();
+              await camera.start();
             }}
           }} else {{
             cameraRunning = false;
             toggleCamBtn.innerText = "Start Camera";
             toggleCamBtn.className = "btn";
             liveDot.className = "status-dot status-inactive";
+            if (camera) {{
+              await camera.stop();
+            }}
             updatePredictions([], false);
           }}
         }}
