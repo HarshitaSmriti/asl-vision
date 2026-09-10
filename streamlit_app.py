@@ -834,10 +834,13 @@ if mode == "📹 Live Camera (Primary)":
               if (tBuf) {{ tBuf.innerText = (resData.buffer_fill || 0) + "/64"; }}
               
               if (resData.status === 'collecting_frames') {{
-                mainSign.innerText = "Collecting frames...";
+                mainSign.innerText = "Buffering Motion...";
                 mainConf.innerText = resData.buffer_fill + "/" + resData.buffer_target + " frames";
-                hudSign.innerText = "COLLECTING MOTION FRAMES";
-                sourceBadge.innerText = "Buffering Motion";
+                hudSign.innerText = "BUFFERING MOTION";
+                sourceBadge.innerText = "Collecting " + resData.buffer_fill + "/" + resData.buffer_target;
+                sourceBadge.style.borderColor = "rgba(6, 182, 212, 0.4)";
+                sourceBadge.style.color = "#38bdf8";
+                dualMetrics.style.display = "none";
                 topContainer.innerHTML = '<div style="color: #64748b; font-size: 0.82rem; text-align: center; margin-top: 18px;">Buffering motion (' + resData.buffer_fill + '/' + resData.buffer_target + ' frames) for 64-frame sequence...</div>';
               }} else if (resData.top_predictions && resData.top_predictions.length > 0) {{
                 updatePredictions(resData, true);

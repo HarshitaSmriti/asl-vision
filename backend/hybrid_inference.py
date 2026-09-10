@@ -151,9 +151,9 @@ class HybridASLInferenceEngine:
 class HybridRollingLivePredictor:
     """
     Maintains a rolling buffer of 348-dim landmark frames for real-time live video streams.
-    Integrates HybridASLInferenceEngine with toggleable hybrid mode.
+    Integrates HybridASLInferenceEngine with temporal consistency and anti-flicker debouncing.
     """
-    def __init__(self, buffer_size: int = 64, step_size: int = 2, min_frames: int = 16, hybrid_mode: bool = True):
+    def __init__(self, buffer_size: int = 64, step_size: int = 2, min_frames: int = 24, hybrid_mode: bool = True):
         self.engine = HybridASLInferenceEngine(hybrid_mode=hybrid_mode)
         self.buffer_size = buffer_size
         self.step_size = step_size
@@ -161,10 +161,17 @@ class HybridRollingLivePredictor:
         self.frame_buffer = collections.deque(maxlen=buffer_size)
         self.frame_count = 0
         self.last_prediction: Optional[Dict[str, Any]] = None
+        
+        # Temporal consistency / debouncing history
+        self.prediction_history = collections.deque(maxlen=4)
+        self.locked_prediction: str = "Detecting sign..."
+        self.locked_source: str = "95_class_model"
+        self.locked_confidence: float = 0.0
+        self.locked_is_confident: bool = False
 
     def add_frame(self, frame_features_348: np.ndarray, hybrid_mode: Optional[bool] = None) -> Dict[str, Any]:
         """
-        Appends a new frame (348 features) to the buffer and predicts.
+        Appends a new frame (348 features) to the buffer and predicts with temporal consistency.
         """
         if hybrid_mode is not None:
             self.engine.hybrid_mode = hybrid_mode
@@ -179,7 +186,7 @@ class HybridRollingLivePredictor:
                 "status": "collecting_frames",
                 "buffer_fill": curr_fill,
                 "buffer_target": self.buffer_size,
-                "prediction": f"Collecting frames... {curr_fill}/{self.buffer_size}",
+                "prediction": f"Buffering motion... {curr_fill}/{self.buffer_size}",
                 "confidence": 0.0,
                 "model_confidence": 0.0,
                 "rule_compatibility": 0.0,
@@ -197,15 +204,60 @@ class HybridRollingLivePredictor:
         frames_list = list(self.frame_buffer)
         sample_696 = process_landmarks_sequence(frames_list)
         
-        result = self.engine.predict_sample(sample_696, top_k=5)
-        result["buffer_fill"] = curr_fill
-        result["buffer_target"] = self.buffer_size
+        raw_res = self.engine.predict_sample(sample_696, top_k=5)
+        raw_res["buffer_fill"] = curr_fill
+        raw_res["buffer_target"] = self.buffer_size
 
-        self.last_prediction = result
-        return result
+        # Temporal Consistency & Anti-Flickering Filter
+        cand_sign = raw_res.get("raw_top_class", "Uncertain")
+        is_cand_confident = raw_res.get("is_confident", False)
+        cand_source = raw_res.get("source", "95_class_model")
+        cand_conf = raw_res.get("confidence", 0.0)
+
+        if is_cand_confident and cand_sign != "Uncertain":
+            self.prediction_history.append(cand_sign)
+        else:
+            self.prediction_history.append(None)
+
+        # Confirm sign if it appears in at least 2 of recent 3 evaluations
+        recent_list = list(self.prediction_history)[-3:]
+        valid_signs = [s for s in recent_list if s is not None]
+        
+        if valid_signs:
+            most_common = max(set(valid_signs), key=valid_signs.count)
+            count = valid_signs.count(most_common)
+            if count >= 2:
+                self.locked_prediction = most_common
+                self.locked_source = cand_source
+                self.locked_confidence = cand_conf
+                self.locked_is_confident = True
+            elif not self.locked_is_confident:
+                self.locked_prediction = "Detecting sign..."
+                self.locked_is_confident = False
+        else:
+            self.locked_prediction = "Detecting sign..."
+            self.locked_is_confident = False
+            self.locked_confidence = cand_conf
+
+        # Apply debounced output to final result dictionary
+        raw_res["prediction"] = self.locked_prediction if self.locked_is_confident else "Detecting sign..."
+        raw_res["is_confident"] = self.locked_is_confident
+        if self.locked_is_confident:
+            raw_res["source"] = self.locked_source
+            raw_res["status"] = "recognizing" if self.locked_source == "95_class_model" else "everyday_gesture"
+        else:
+            raw_res["status"] = "low_confidence"
+
+        self.last_prediction = raw_res
+        return raw_res
 
     def reset(self):
         self.frame_buffer.clear()
         self.frame_count = 0
+        self.prediction_history.clear()
+        self.locked_prediction = "Detecting sign..."
+        self.locked_source = "95_class_model"
+        self.locked_confidence = 0.0
+        self.locked_is_confident = False
         self.last_prediction = None
 
