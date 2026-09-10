@@ -25,29 +25,30 @@ from backend.preprocessing import (
     SEQUENCE_LENGTH
 )
 from backend.landmark_detector import HolisticLandmarkDetector
-from backend.inference import ASLInferenceEngine, RollingLivePredictor
+from backend.inference import ASLInferenceEngine
+from backend.hybrid_inference import HybridASLInferenceEngine, HybridRollingLivePredictor
 
 from contextlib import asynccontextmanager
 
 # Global instances loaded once on startup
-inference_engine: ASLInferenceEngine = None
+inference_engine: HybridASLInferenceEngine = None
 video_detector: HolisticLandmarkDetector = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global inference_engine, video_detector
-    print("Starting ASL Vision backend...")
-    inference_engine = ASLInferenceEngine()
+    print("Starting ASL Vision backend with Hybrid Recognition Engine...")
+    inference_engine = HybridASLInferenceEngine(hybrid_mode=True)
     video_detector = HolisticLandmarkDetector()
-    print("ASL Vision backend ready.")
+    print("ASL Vision hybrid backend ready.")
     yield
     if video_detector:
         video_detector.close()
 
 app = FastAPI(
-    title="ASL Vision AI API",
-    description="Real-time American Sign Language recognition powered by ASLTransformer (95 classes, 75.72% accuracy).",
-    version="1.0.0",
+    title="ASL Vision AI API (Hybrid System)",
+    description="Real-time American Sign Language recognition powered by ASLTransformer (95 classes) + Modular Geometric Gesture Layer.",
+    version="2.0.0",
     lifespan=lifespan
 )
 
@@ -64,38 +65,41 @@ app.add_middleware(
 @app.head("/health")
 def health_check():
     """Health probe endpoint for Render."""
-    return {"status": "ok", "service": "asl-vision-backend"}
+    return {"status": "ok", "service": "asl-vision-backend", "mode": "hybrid"}
 
 @app.get("/api/info")
 def get_info():
     """Returns model metadata, class vocabulary, and device information."""
     model, class_names, device = load_asl_model()
     return {
-        "model_name": "ASLTransformer",
+        "model_name": "ASLTransformer (Hybrid)",
         "num_classes": len(class_names),
         "test_accuracy": "75.72%",
         "best_epoch": 51,
         "input_dim": 696,
         "base_features": 348,
         "sequence_length": 64,
+        "hybrid_mode_supported": True,
         "device": device.type.upper(),
         "total_parameters": sum(p.numel() for p in model.parameters()),
         "classes": [class_names[i] for i in sorted(class_names.keys())]
     }
 
 # Session dictionary for HTTP-based live streaming
-live_http_predictors: Dict[str, RollingLivePredictor] = {}
+live_http_predictors: Dict[str, HybridRollingLivePredictor] = {}
 
 @app.post("/api/predict_live")
 async def predict_live_step(data: Dict[str, Any]):
     """
     Accepts client landmarks dictionary from browser/Streamlit,
     processes 348-dim features through rolling temporal predictor,
-    and returns real-time PyTorch ASLTransformer predictions.
+    and returns real-time hybrid ASL predictions.
     """
     session_id = data.get("session_id", "default")
+    hybrid_mode = data.get("hybrid_mode", True)
+
     if session_id not in live_http_predictors:
-        live_http_predictors[session_id] = RollingLivePredictor(buffer_size=64, step_size=2, min_frames=16)
+        live_http_predictors[session_id] = HybridRollingLivePredictor(buffer_size=64, step_size=2, min_frames=16, hybrid_mode=hybrid_mode)
 
     predictor = live_http_predictors[session_id]
     
@@ -113,18 +117,26 @@ async def predict_live_step(data: Dict[str, Any]):
             "prediction": "Position hands in view",
             "is_confident": False,
             "confidence": 0.0,
+            "model_confidence": 0.0,
+            "rule_compatibility": 0.0,
+            "final_reliability": 0.0,
+            "source": "none",
             "top_predictions": [],
             "hand_detected": False
         }
 
     frame_features = process_client_landmarks_dict(raw_landmarks)
-    pred_result = predictor.add_frame(frame_features)
+    pred_result = predictor.add_frame(frame_features, hybrid_mode=hybrid_mode)
     
     if pred_result is None:
         pred_result = {
             "success": True,
             "prediction": "Buffering motion...",
             "confidence": 0.0,
+            "model_confidence": 0.0,
+            "rule_compatibility": 0.0,
+            "final_reliability": 0.0,
+            "source": "collecting",
             "top_predictions": [],
             "hand_detected": True
         }

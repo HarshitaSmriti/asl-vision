@@ -31,11 +31,12 @@ from backend.preprocessing import (
     SEQUENCE_LENGTH
 )
 from backend.landmark_detector import HolisticLandmarkDetector
-from backend.inference import ASLInferenceEngine, RollingLivePredictor
+from backend.inference import ASLInferenceEngine
+from backend.hybrid_inference import HybridASLInferenceEngine, HybridRollingLivePredictor
 
 # Set Page Config
 st.set_page_config(
-    page_title="ASL Vision | Live Sign Language AI",
+    page_title="ASL Vision | Hybrid Sign Language AI",
     page_icon="🤟",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -99,6 +100,36 @@ st.markdown("""
         text-transform: capitalize;
         letter-spacing: -0.02em;
     }
+    .badge-source-neural {
+        background: rgba(6, 182, 212, 0.15);
+        border: 1px solid rgba(6, 182, 212, 0.5);
+        color: #38bdf8;
+        padding: 4px 12px;
+        border-radius: 9999px;
+        font-family: monospace;
+        font-size: 0.8rem;
+        font-weight: 700;
+    }
+    .badge-source-everyday {
+        background: rgba(168, 85, 247, 0.15);
+        border: 1px solid rgba(168, 85, 247, 0.5);
+        color: #c084fc;
+        padding: 4px 12px;
+        border-radius: 9999px;
+        font-family: monospace;
+        font-size: 0.8rem;
+        font-weight: 700;
+    }
+    .badge-source-uncertain {
+        background: rgba(245, 158, 11, 0.15);
+        border: 1px solid rgba(245, 158, 11, 0.5);
+        color: #fbbf24;
+        padding: 4px 12px;
+        border-radius: 9999px;
+        font-family: monospace;
+        font-size: 0.8rem;
+        font-weight: 700;
+    }
     [data-testid="stSidebar"] {
         background-color: #0d121e;
         border-right: 1px solid #1e293b;
@@ -107,9 +138,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Cache model and detector loaders
-@st.cache_resource(show_spinner="Loading trained ASLTransformer checkpoint...")
+@st.cache_resource(show_spinner="Loading Hybrid ASL Recognition Engine...")
 def get_engine():
-    engine = ASLInferenceEngine()
+    engine = HybridASLInferenceEngine(hybrid_mode=True)
     return engine
 
 @st.cache_resource(show_spinner="Initializing MediaPipe Holistic CV Engine...")
@@ -134,7 +165,7 @@ DEFAULT_CLASS_NAMES = {i: name for i, name in enumerate(ALL_95_CLASSES)}
 try:
     engine = get_engine()
     detector = get_detector()
-    model, class_names, device = engine.model, engine.class_names, engine.device
+    model, class_names, device = engine.neural_engine.model, engine.neural_engine.class_names, engine.neural_engine.device
     model_loaded = True
 except Exception as e:
     model_loaded = False
@@ -143,8 +174,8 @@ except Exception as e:
 
 # Sidebar
 with st.sidebar:
-    st.markdown("### 🤟 ASL VISION AI")
-    st.markdown("<p style='font-size: 0.8rem; color: #94a3b8;'>Real-Time American Sign Language Recognition</p>", unsafe_allow_html=True)
+    st.markdown("### 🤟 ASL VISION AI (HYBRID)")
+    st.markdown("<p style='font-size: 0.8rem; color: #94a3b8;'>Real-Time Sign Language Recognition (Transformer + Gesture Layer)</p>", unsafe_allow_html=True)
     
     st.markdown("---")
     
@@ -155,6 +186,8 @@ with st.sidebar:
     )
     
     st.markdown("---")
+    hybrid_mode_toggle = st.toggle("⚡ Enable Hybrid Recognition Mode", value=True, help="Combines 95-class neural model with geometric rule verification and everyday signs (hello, thank you, please, etc.)")
+    
     confidence_thresh = st.slider(
         "🎯 Confidence Threshold:",
         min_value=0.05,
@@ -165,13 +198,13 @@ with st.sidebar:
     )
     
     st.markdown("---")
-    st.markdown("#### ⚡ Model Specifications")
+    st.markdown("#### ⚡ System Specifications")
     st.markdown("""
-    - **Architecture**: `ASLTransformer` (4 Layers, 4 Heads)
+    - **Primary Model**: `ASLTransformer` (4 Layers, 4 Heads)
     - **Input Representation**: 64 Frames × 696 Velocity Dims
-    - **Total Classes**: 95 ASL Vocabulary Signs
+    - **Core Vocabulary**: 95 Trained ASL Signs
+    - **Everyday Layer**: Hello, Thank You, Please, Sorry, Yes, No, Stop, Help, What, Where...
     - **Validation Accuracy**: **75.72%** (Epoch 51 Checkpoint)
-    - **Base Parameters**: 2,311,519 (~2.31M)
     - **Execution Device**: `{}`
     """.format(device.type.upper() if model_loaded else "N/A"))
     
@@ -181,52 +214,79 @@ with st.sidebar:
 # Top Header Banner
 col_title, col_m1, col_m2, col_m3 = st.columns([4, 2, 2, 2])
 with col_title:
-    st.markdown('<div class="gradient-title">ASL VISION</div>', unsafe_allow_html=True)
-    st.markdown("<p style='color: #94a3b8; font-size: 0.85rem; margin-top: -8px;'>Live Hand Landmark Tracking & 95-Class Transformer Recognition</p>", unsafe_allow_html=True)
+    st.markdown('<div class="gradient-title">ASL VISION HYBRID</div>', unsafe_allow_html=True)
+    st.markdown("<p style='color: #94a3b8; font-size: 0.85rem; margin-top: -8px;'>Live Hand Landmark Tracking & Hybrid Neural-Kinematic Recognition</p>", unsafe_allow_html=True)
 
 with col_m1:
     st.markdown('<div class="metric-card"><div class="metric-title">Test Accuracy</div><div class="metric-value">75.72%</div></div>', unsafe_allow_html=True)
 with col_m2:
-    st.markdown('<div class="metric-card"><div class="metric-title">Vocabulary</div><div class="metric-value">95 Signs</div></div>', unsafe_allow_html=True)
+    st.markdown('<div class="metric-card"><div class="metric-title">Vocabulary</div><div class="metric-value">95+ Everyday</div></div>', unsafe_allow_html=True)
 with col_m3:
     st.markdown('<div class="metric-card"><div class="metric-title">Input Dimensions</div><div class="metric-value">64 × 696</div></div>', unsafe_allow_html=True)
 
 st.markdown("<hr style='border-color: #1e293b; margin: 10px 0 20px 0;' />", unsafe_allow_html=True)
 
-# Helper function to render Top 5 Predictions
+# Helper function to render Top 5 Predictions with Hybrid Telemetry
 def render_prediction_results(pred_result, is_image=False):
     top_sign = pred_result.get("prediction", "Unknown")
     confidence = pred_result.get("confidence", 0.0) * 100
+    source = pred_result.get("source", "95_class_model")
+    rule_compat = pred_result.get("rule_compatibility", 0.0) * 100
+    final_rel = pred_result.get("final_reliability", 0.0) * 100
+    telemetry = pred_result.get("debug_telemetry", {})
     top_preds = pred_result.get("top_predictions", [])
     
+    # Choose badge style based on prediction source
+    if source == "everyday_gesture_layer":
+        source_badge = '<span class="badge-source-everyday">✨ Everyday Gesture Layer</span>'
+    elif source == "uncertain" or not pred_result.get("is_confident", True):
+        source_badge = '<span class="badge-source-uncertain">⚠️ Uncertain / Low Evidence</span>'
+    else:
+        source_badge = '<span class="badge-source-neural">🏷️ 95-Class Neural Model</span>'
+
     st.markdown(f"""
     <div class="pred-banner">
-        <div style="font-size: 0.75rem; color: #38bdf8; font-family: monospace; letter-spacing: 0.1em; text-transform: uppercase;">
-            Recognized Sign
+        <div style="margin-bottom: 8px;">
+            {source_badge}
         </div>
         <div class="pred-sign-text">{top_sign}</div>
-        <div style="margin-top: 6px;">
-            <span style="background: rgba(6, 182, 212, 0.15); border: 1px solid rgba(6, 182, 212, 0.4); color: #38bdf8; padding: 4px 12px; border-radius: 9999px; font-family: monospace; font-size: 0.85rem; font-weight: 700;">
-                {confidence:.1f}% Confidence
+        <div style="margin-top: 10px; display: flex; justify-content: center; gap: 12px; flex-wrap: wrap;">
+            <span style="background: rgba(6, 182, 212, 0.12); border: 1px solid rgba(6, 182, 212, 0.35); color: #38bdf8; padding: 4px 10px; border-radius: 8px; font-family: monospace; font-size: 0.8rem; font-weight: 700;">
+                Neural Conf: {confidence:.1f}%
+            </span>
+            <span style="background: rgba(168, 85, 247, 0.12); border: 1px solid rgba(168, 85, 247, 0.35); color: #c084fc; padding: 4px 10px; border-radius: 8px; font-family: monospace; font-size: 0.8rem; font-weight: 700;">
+                Rule Match: {rule_compat:.1f}%
+            </span>
+            <span style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.35); color: #34d399; padding: 4px 10px; border-radius: 8px; font-family: monospace; font-size: 0.8rem; font-weight: 700;">
+                Reliability: {final_rel:.1f}%
             </span>
         </div>
     </div>
     """, unsafe_allow_html=True)
+
+    if telemetry:
+        with st.expander("🔬 Kinematic & Hand Shape Telemetry", expanded=False):
+            t_col1, t_col2, t_col3, t_col4 = st.columns(4)
+            t_col1.metric("Dominant Hand", telemetry.get("dominant_hand", "N/A").capitalize())
+            t_col2.metric("Hand Shape", telemetry.get("hand_shape", "N/A").replace("_", " ").capitalize())
+            t_col3.metric("Near Chin", "Yes" if telemetry.get("near_chin") else "No")
+            t_col4.metric("Displacement", f"{telemetry.get('displacement_magnitude', 0.0):.2f}")
     
-    st.markdown("#### 🏆 Top-5 Predictions (from ASLTransformer)")
+    st.markdown("#### 🏆 Top Predictions (Hybrid Evaluation)")
     if top_preds:
         for i, item in enumerate(top_preds):
             cls_name = item.get("class", "").capitalize()
             pct = item.get("confidence", 0.0) * 100
+            compat = item.get("rule_compatibility", 1.0) * 100
             
             col_c1, col_c2 = st.columns([3, 1])
             with col_c1:
-                st.write(f"**{i+1}. {cls_name}**")
+                st.write(f"**{i+1}. {cls_name}** `[Neural: {pct:.1f}% | Rule: {compat:.1f}%]`")
                 st.progress(min(1.0, max(0.02, item.get("confidence", 0.0))))
             with col_c2:
                 st.markdown(f"<div style='text-align: right; font-family: monospace; font-weight: bold; margin-top: 4px;'>{pct:.1f}%</div>", unsafe_allow_html=True)
     else:
-        st.info("Raise hands in camera view to begin 95-sign recognition.")
+        st.info("Raise hands in camera view to begin recognition.")
 
 # ---------------------------------------------------------
 # MODE 1: LIVE CAMERA (PRIMARY)
@@ -440,10 +500,15 @@ if mode == "📹 Live Camera (Primary)":
         <!-- Real-Time Metrics & Top 5 Panel -->
         <div class="right-panel">
           <div class="pred-card">
-            <div class="pred-label">Recognized Sign (Raw Softmax)</div>
+            <div id="source-badge-container" style="margin-bottom: 6px;">
+              <span id="source-badge" class="badge">95-Class Neural Model</span>
+            </div>
             <div id="main-sign" class="pred-value">Waiting...</div>
             <div>
               <span id="main-conf" class="badge">0.0% Confidence</span>
+            </div>
+            <div id="dual-metrics" style="font-size: 0.72rem; color: #94a3b8; font-family: monospace; margin-top: 6px; display: none;">
+              Neural: <span id="tele-neural-conf" style="color: #38bdf8;">0.0%</span> | Rule: <span id="tele-rule-compat" style="color: #c084fc;">0.0%</span>
             </div>
           </div>
 
@@ -453,27 +518,29 @@ if mode == "📹 Live Camera (Primary)":
             <div>Face: <span id="tele-face" style="color: #ef4444; font-weight: bold;">NO</span></div>
             <div>Left Hand: <span id="tele-lh" style="color: #ef4444; font-weight: bold;">NO</span></div>
             <div>Right Hand: <span id="tele-rh" style="color: #ef4444; font-weight: bold;">NO</span></div>
+            <div>Shape: <span id="tele-shape" style="color: #38bdf8; font-weight: bold;">--</span></div>
+            <div>Displacement: <span id="tele-disp" style="color: #38bdf8; font-weight: bold;">--</span></div>
             <div style="grid-column: span 2; border-top: 1px solid #1e293b; padding-top: 4px; color: #38bdf8;">
               Buffer: <span id="tele-buf">0/64</span> | Input: <code>[1,64,696]</code>
             </div>
           </div>
 
           <div style="font-size: 0.85rem; font-weight: 700; color: #cbd5e1; display: flex; justify-content: space-between;">
-            <span>Top-5 Predictions</span>
+            <span>Predictions & Matches</span>
             <span id="hand-status" style="font-size: 0.75rem; font-family: monospace; color: #94a3b8;">Hands: Searching</span>
           </div>
 
           <div id="top-predictions-container" style="flex: 1; overflow-y: auto;">
             <!-- Rendered dynamically -->
             <div style="color: #64748b; font-size: 0.82rem; text-align: center; margin-top: 18px;">
-              Raise one or both hands in front of the camera to activate 95-class recognition.
+              Raise one or both hands in front of the camera to activate hybrid recognition.
             </div>
           </div>
 
           <!-- Controls -->
           <div class="ctrl-row">
             <button id="toggle-cam-btn" class="btn btn-primary" onclick="toggleCamera()">Stop Camera</button>
-            <button id="toggle-skel-btn" class="btn" onclick="toggleSkeleton()">Toggle Skeleton</button>
+            <button id="toggle-hybrid-btn" class="btn" onclick="toggleHybrid()" style="border-color: #c084fc; color: #c084fc;">⚡ Hybrid: ON</button>
             <button id="reset-buf-btn" class="btn" onclick="resetBuffer()">Reset Buffer</button>
           </div>
         </div>
@@ -491,15 +558,23 @@ if mode == "📹 Live Camera (Primary)":
         const fpsVal = document.getElementById('fps-val');
         const mainSign = document.getElementById('main-sign');
         const mainConf = document.getElementById('main-conf');
+        const sourceBadge = document.getElementById('source-badge');
+        const dualMetrics = document.getElementById('dual-metrics');
+        const teleNeuralConf = document.getElementById('tele-neural-conf');
+        const teleRuleCompat = document.getElementById('tele-rule-compat');
+        const teleShape = document.getElementById('tele-shape');
+        const teleDisp = document.getElementById('tele-disp');
         const topContainer = document.getElementById('top-predictions-container');
         const handStatus = document.getElementById('hand-status');
         const liveDot = document.getElementById('live-dot');
         const toggleCamBtn = document.getElementById('toggle-cam-btn');
+        const toggleHybridBtn = document.getElementById('toggle-hybrid-btn');
 
         let camera = null;
         let holistic = null;
         let cameraRunning = true;
         let showSkeleton = true;
+        let hybridMode = true;
         let frameCount = 0;
         let lastTime = performance.now();
 
@@ -610,13 +685,17 @@ if mode == "📹 Live Camera (Primary)":
           canvasCtx.shadowBlur = 0;
         }}
 
-        // Dynamic Top 5 prediction updater
-        function updatePredictions(topPredictions, hasHands, statusText, confVal, isConfident) {{
+        // Dynamic prediction updater with Hybrid layer support
+        function updatePredictions(resData, hasHands) {{
           if (!hasHands) {{
             mainSign.innerText = "Position Hands in View";
             mainConf.innerText = "0.0% Confidence";
             hudSign.innerText = "POSITION HANDS IN VIEW";
-            topContainer.innerHTML = '<div style="color: #64748b; font-size: 0.82rem; text-align: center; margin-top: 24px;">Raise one or both hands in front of the camera to activate 95-class recognition.</div>';
+            sourceBadge.innerText = "Waiting for hands...";
+            sourceBadge.style.borderColor = "rgba(6, 182, 212, 0.4)";
+            sourceBadge.style.color = "#38bdf8";
+            dualMetrics.style.display = "none";
+            topContainer.innerHTML = '<div style="color: #64748b; font-size: 0.82rem; text-align: center; margin-top: 24px;">Raise one or both hands in front of the camera to activate recognition.</div>';
             handStatus.innerText = "Hands: None";
             handStatus.style.color = "#ef4444";
             return;
@@ -625,27 +704,57 @@ if mode == "📹 Live Camera (Primary)":
           handStatus.innerText = "Hands: Active";
           handStatus.style.color = "#10b981";
 
-          if (!topPredictions || topPredictions.length === 0) {{
-            mainSign.innerText = statusText || "Buffering...";
-            mainConf.innerText = confVal !== undefined ? (confVal * 100).toFixed(1) + "%" : "Collecting...";
-            hudSign.innerText = (statusText || "BUFFERING").toUpperCase();
+          if (!resData || (!resData.top_predictions && !resData.prediction)) {{
+            mainSign.innerText = "Buffering...";
+            hudSign.innerText = "BUFFERING";
             topContainer.innerHTML = '<div style="color: #64748b; font-size: 0.82rem; text-align: center; margin-top: 24px;">Collecting motion sequence across 64 temporal frames...</div>';
             return;
           }}
 
-          const top1 = topPredictions[0];
-          const displaySign = isConfident ? top1.class : (statusText || "Detecting sign...");
+          const source = resData.source || "95_class_model";
+          const isConfident = resData.is_confident;
+          const displaySign = resData.prediction || "Detecting sign...";
+          const confVal = (resData.confidence || resData.model_confidence || 0.0) * 100;
+          const ruleCompat = (resData.rule_compatibility || 0.0) * 100;
+
           mainSign.innerText = displaySign;
-          mainConf.innerText = (top1.confidence * 100).toFixed(1) + "% Confidence";
+          mainConf.innerText = confVal.toFixed(1) + "% Confidence";
           hudSign.innerText = displaySign.toUpperCase();
 
+          // Badge source formatting
+          if (source === "everyday_gesture_layer") {{
+            sourceBadge.innerText = "✨ Everyday Gesture Layer";
+            sourceBadge.style.borderColor = "rgba(168, 85, 247, 0.6)";
+            sourceBadge.style.color = "#c084fc";
+          }} else if (source === "uncertain" || !isConfident) {{
+            sourceBadge.innerText = "⚠️ Uncertain / Detecting";
+            sourceBadge.style.borderColor = "rgba(245, 158, 11, 0.6)";
+            sourceBadge.style.color = "#fbbf24";
+          }} else {{
+            sourceBadge.innerText = "🏷️ 95-Class Neural Model";
+            sourceBadge.style.borderColor = "rgba(6, 182, 212, 0.6)";
+            sourceBadge.style.color = "#38bdf8";
+          }}
+
+          // Telemetry
+          if (resData.debug_telemetry) {{
+            const dt = resData.debug_telemetry;
+            if (teleShape) {{ teleShape.innerText = (dt.hand_shape || "--").replace("_", " "); }}
+            if (teleDisp) {{ teleDisp.innerText = (dt.displacement_magnitude !== undefined) ? dt.displacement_magnitude.toFixed(2) : "--"; }}
+            if (teleNeuralConf) {{ teleNeuralConf.innerText = confVal.toFixed(1) + "%"; }}
+            if (teleRuleCompat) {{ teleRuleCompat.innerText = ruleCompat.toFixed(1) + "%"; }}
+            dualMetrics.style.display = "block";
+          }}
+
           let html = '';
-          topPredictions.forEach((item, idx) => {{
+          const topList = resData.top_predictions || [];
+          topList.forEach((item, idx) => {{
             const pct = (item.confidence * 100).toFixed(1);
+            const comp = item.rule_compatibility !== undefined ? ` [Rule: ${(item.rule_compatibility*100).toFixed(0)}%]` : '';
             html += `
               <div class="bar-item">
                 <div class="bar-header">
-                  <span class="bar-name">${{idx + 1}}. ${{item.class}}</span>
+                  <span class="bar-name">${{idx + 1}}. ${{item.class}} <span style="font-size:0.68rem; color:#94a3b8;">${{comp}}</span></span>
                   <span class="bar-pct">${{pct}}%</span>
                 </div>
                 <div class="bar-track">
@@ -681,7 +790,7 @@ if mode == "📹 Live Camera (Primary)":
 
           const hasHands = hasLH || hasRH;
           if (!hasHands) {{
-            updatePredictions([], false);
+            updatePredictions(null, false);
             if (tBuf) {{ tBuf.innerText = "0/64 (no hands)"; }}
             return;
           }}
@@ -695,6 +804,7 @@ if mode == "📹 Live Camera (Primary)":
 
           const payload = {{
             session_id: 'live_stream',
+            hybrid_mode: hybridMode,
             landmarks: {{
               pose: results.poseLandmarks ? results.poseLandmarks.slice(0, 25).map(l => [l.x, l.y, l.z]) : [],
               face: results.faceLandmarks ? results.faceLandmarks.map(l => [l.x, l.y, l.z]) : [],
@@ -727,9 +837,10 @@ if mode == "📹 Live Camera (Primary)":
                 mainSign.innerText = "Collecting frames...";
                 mainConf.innerText = resData.buffer_fill + "/" + resData.buffer_target + " frames";
                 hudSign.innerText = "COLLECTING MOTION FRAMES";
-                topContainer.innerHTML = '<div style="color: #64748b; font-size: 0.82rem; text-align: center; margin-top: 18px;">Buffering motion (' + resData.buffer_fill + '/' + resData.buffer_target + ' frames) for 64-frame ASLTransformer...</div>';
+                sourceBadge.innerText = "Buffering Motion";
+                topContainer.innerHTML = '<div style="color: #64748b; font-size: 0.82rem; text-align: center; margin-top: 18px;">Buffering motion (' + resData.buffer_fill + '/' + resData.buffer_target + ' frames) for 64-frame sequence...</div>';
               }} else if (resData.top_predictions && resData.top_predictions.length > 0) {{
-                updatePredictions(resData.top_predictions, true, resData.prediction, resData.confidence, resData.is_confident);
+                updatePredictions(resData, true);
               }}
               return;
             }} else {{
@@ -772,6 +883,19 @@ if mode == "📹 Live Camera (Primary)":
 
           drawSkeletonOverlay(results, canvasElement.width, canvasElement.height);
           predictFromLandmarks(results);
+        }}
+
+        function toggleHybrid() {{
+          hybridMode = !hybridMode;
+          if (hybridMode) {{
+            toggleHybridBtn.innerText = "⚡ Hybrid: ON";
+            toggleHybridBtn.style.color = "#c084fc";
+            toggleHybridBtn.style.borderColor = "#c084fc";
+          }} else {{
+            toggleHybridBtn.innerText = "🏷️ Pure Neural (95)";
+            toggleHybridBtn.style.color = "#38bdf8";
+            toggleHybridBtn.style.borderColor = "#38bdf8";
+          }}
         }}
 
         async function initHolisticCamera() {{
