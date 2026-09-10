@@ -758,8 +758,9 @@ if mode == "📹 Live Camera (Primary)":
           topContainer.innerHTML = html;
         }}
 
-        // Dynamic temporal gesture recognition state with action dynamics
+        // Dynamic temporal gesture recognition state with temporal stabilizer
         let frameHistory = [];
+        let shapeHistory = [];
         let candidateSign = null;
         let candidateStreak = 0;
         let confirmedSign = null;
@@ -775,6 +776,7 @@ if mode == "📹 Live Camera (Primary)":
           const hasRH = Boolean(results.rightHandLandmarks && results.rightHandLandmarks.length > 0);
           if (!hasLH && !hasRH) {{
             frameHistory = [];
+            shapeHistory = [];
             candidateSign = null;
             candidateStreak = 0;
             confirmedSign = null;
@@ -830,27 +832,44 @@ if mode == "📹 Live Camera (Primary)":
             }};
           }};
 
-          const rhShape = getHandShape(rh);
-          const lhShape = hasLH ? getHandShape(results.leftHandLandmarks) : rhShape;
+          const rawRhShape = getHandShape(rh);
+          const lhShape = hasLH ? getHandShape(results.leftHandLandmarks) : rawRhShape;
 
-          const isOpenPalm = rhShape.isOpenPalm;
-          const isFist = rhShape.isFist;
-          const isWHand = rhShape.isWHand;
-          const isTwoFingers = rhShape.isTwoFingers;
-          const isIndexOnly = rhShape.isIndexOnly;
-          const isPinch = rhShape.isPinch;
-          const isYHand = rhShape.isYHand;
-          const isThumbsUp = rhShape.isThumbsUp;
+          // Temporal Handshape Stabilizer (Majority Voting over 6 frames)
+          let rawName = "tracking";
+          if (rawRhShape.isOpenPalm) rawName = "open_palm";
+          else if (rawRhShape.isFist) rawName = "fist";
+          else if (rawRhShape.isWHand) rawName = "three_fingers_w";
+          else if (rawRhShape.isTwoFingers) rawName = "two_fingers_v";
+          else if (rawRhShape.isIndexOnly) rawName = "index_point";
+          else if (rawRhShape.isPinch) rawName = "pinch_beak";
+          else if (rawRhShape.isYHand) rawName = "y_hand";
+          else if (rawRhShape.isThumbsUp) rawName = "thumbs_up";
 
-          let shapeName = "tracking";
-          if (isOpenPalm) shapeName = "open_palm";
-          else if (isFist) shapeName = "fist";
-          else if (isWHand) shapeName = "three_fingers_w";
-          else if (isTwoFingers) shapeName = "two_fingers_v";
-          else if (isIndexOnly) shapeName = "index_point";
-          else if (isPinch) shapeName = "pinch_beak";
-          else if (isYHand) shapeName = "y_hand";
-          else if (isThumbsUp) shapeName = "thumbs_up";
+          shapeHistory.push(rawName);
+          if (shapeHistory.length > 6) shapeHistory.shift();
+
+          // Compute most frequent shape in window (Majority Vote)
+          const counts = {{}};
+          shapeHistory.forEach(s => {{ counts[s] = (counts[s] || 0) + 1; }});
+          let shapeName = rawName;
+          let maxCount = 0;
+          for (let s in counts) {{
+            if (counts[s] > maxCount) {{
+              maxCount = counts[s];
+              shapeName = s;
+            }}
+          }}
+
+          // Stable boolean properties derived from smoothed shape
+          const isOpenPalm = shapeName === "open_palm" || rawRhShape.isOpenPalm;
+          const isFist = shapeName === "fist" || rawRhShape.isFist;
+          const isWHand = shapeName === "three_fingers_w" || rawRhShape.isWHand;
+          const isTwoFingers = shapeName === "two_fingers_v" || rawRhShape.isTwoFingers;
+          const isIndexOnly = shapeName === "index_point" || rawRhShape.isIndexOnly;
+          const isPinch = shapeName === "pinch_beak" || rawRhShape.isPinch;
+          const isYHand = shapeName === "y_hand" || rawRhShape.isYHand;
+          const isThumbsUp = shapeName === "thumbs_up" || rawRhShape.isThumbsUp;
 
           const scissorDists = frameHistory.map(f => f.scissorDist);
           const isScissorAction = isTwoFingers && ((Math.max(...scissorDists) - Math.min(...scissorDists)) > 0.020);
@@ -1052,7 +1071,7 @@ if mode == "📹 Live Camera (Primary)":
             detected = "all"; conf = 0.88; source = "95_class_model";
           }}
 
-          // 2. Beginner Sign Accumulator (Smooth onset)
+          // 2. Beginner Sign Accumulator (Smooth 3-frame stabilization before confirming)
           if (detected) {{
             if (candidateSign === detected) {{
               candidateStreak++;
@@ -1061,11 +1080,11 @@ if mode == "📹 Live Camera (Primary)":
               candidateStreak = 1;
             }}
 
-            if (candidateStreak >= 2) {{
+            if (candidateStreak >= 3) {{
               confirmedSign = detected;
               confirmedConf = conf;
               confirmedSource = source;
-              confirmHoldUntil = now + 1600; // Hold steady for 1.6s for clear human reading
+              confirmHoldUntil = now + 1800; // Hold steady for 1.8s for clear human reading
 
               const top5 = [{{ class: detected, confidence: conf, rule_compatibility: conf }}];
               const defaultList = ["duck", "brother", "go", "hello", "bye", "thank you", "stop", "where", "apple", "airplane", "car", "book", "clean", "water", "eat", "cut", "alligator"];
@@ -1091,6 +1110,27 @@ if mode == "📹 Live Camera (Primary)":
               source: confirmedSource,
               is_confident: true,
               top_predictions: confirmedTopList,
+              buffer_fill: Math.min(64, frameHistory.length * 4),
+              buffer_target: 64,
+              debug_telemetry: {{
+                hand_shape: shapeName,
+                displacement_magnitude: disp,
+                near_chin: handNearChin,
+                near_forehead: handHigh
+              }}
+            }};
+          }}
+
+          // 4. If currently forming a candidate sign (1-2 frames), show stabilizing status
+          if (candidateSign && candidateStreak > 0) {{
+            return {{
+              success: true,
+              prediction: "Forming " + candidateSign + "... (Hold)",
+              raw_top_class: candidateSign,
+              confidence: 0.65,
+              source: "uncertain",
+              is_confident: false,
+              top_predictions: [{{ class: candidateSign, confidence: 0.65, rule_compatibility: 0.70 }}],
               buffer_fill: Math.min(64, frameHistory.length * 4),
               buffer_target: 64,
               debug_telemetry: {{
