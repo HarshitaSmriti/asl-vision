@@ -758,7 +758,7 @@ if mode == "📹 Live Camera (Primary)":
           topContainer.innerHTML = html;
         }}
 
-        // Dynamic temporal gesture recognition state with beginner accumulator
+        // Dynamic temporal gesture recognition state with action dynamics
         let frameHistory = [];
         let candidateSign = null;
         let candidateStreak = 0;
@@ -782,41 +782,74 @@ if mode == "📹 Live Camera (Primary)":
           }}
 
           const rh = results.rightHandLandmarks || results.leftHandLandmarks;
+          const lh = results.leftHandLandmarks || results.rightHandLandmarks;
           const wrist = rh[0];
+          const wristL = hasLH ? results.leftHandLandmarks[0] : null;
+          const wristR = hasRH ? results.rightHandLandmarks[0] : null;
+
           const nose = results.poseLandmarks ? results.poseLandmarks[0] : {{ x: 0.5, y: 0.2 }};
           const chin = results.faceLandmarks ? results.faceLandmarks[13] : {{ x: 0.5, y: 0.28 }};
           const now = performance.now();
 
-          // Push into temporal window
+          const dist = (p1, p2) => Math.hypot(p1.x - p2.x, p1.y - p2.y);
+
+          // Push into temporal window with two-handed tracking
           frameHistory.push({{
             wrist: wrist,
+            wristL: wristL,
+            wristR: wristR,
+            pinchDist: dist(rh[4], rh[8]),
+            scissorDist: dist(rh[8], rh[12]),
+            twoHandDist: (hasLH && hasRH) ? dist(results.leftHandLandmarks[0], results.rightHandLandmarks[0]) : null,
             time: now,
-            both: hasLH && hasRH,
-            rh: rh
+            both: hasLH && hasRH
           }});
-          if (frameHistory.length > 18) frameHistory.shift();
+          if (frameHistory.length > 20) frameHistory.shift();
 
-          // Rotation-invariant finger extension check (distance from wrist to tip vs wrist to MCP)
-          const dist = (p1, p2) => Math.hypot(p1.x - p2.x, p1.y - p2.y);
-          const isFingerExt = (tipIdx, mcpIdx) => dist(rh[tipIdx], wrist) > (dist(rh[mcpIdx], wrist) * 1.32);
+          // Finger extension analysis on dominant hand
+          const isFingerExt = (hand, tipIdx, mcpIdx) => dist(hand[tipIdx], hand[0]) > (dist(hand[mcpIdx], hand[0]) * 1.30);
+          const getHandShape = (hand) => {{
+            if (!hand) return {{ isOpenPalm: false, isFist: false, isTwoFingers: false, isIndexOnly: false, isPinch: false, isYHand: false, isWHand: false, isThumbsUp: false }};
+            const tExt = dist(hand[4], hand[2]) > 0.045;
+            const iExt = isFingerExt(hand, 8, 5);
+            const mExt = isFingerExt(hand, 12, 9);
+            const rExt = isFingerExt(hand, 16, 13);
+            const pExt = isFingerExt(hand, 20, 17);
+            const extCount = [iExt, mExt, rExt, pExt].filter(Boolean).length;
+            return {{
+              isOpenPalm: extCount >= 3,
+              isFist: extCount === 0,
+              isTwoFingers: iExt && mExt && !rExt && !pExt,
+              isIndexOnly: iExt && !mExt && !rExt && !pExt,
+              isWHand: iExt && mExt && rExt && !pExt,
+              isPinch: dist(hand[4], hand[8]) < 0.080,
+              isYHand: (tExt || pExt) && pExt && !mExt && !rExt,
+              isThumbsUp: tExt && !iExt && !mExt && !rExt && !pExt
+            }};
+          }};
 
-          const thumbExt = dist(rh[4], rh[2]) > 0.045;
-          const indexExt = isFingerExt(8, 5);
-          const middleExt = isFingerExt(12, 9);
-          const ringExt = isFingerExt(16, 13);
-          const pinkyExt = isFingerExt(20, 17);
+          const rhShape = getHandShape(rh);
+          const lhShape = hasLH ? getHandShape(results.leftHandLandmarks) : rhShape;
 
-          const extCount = [indexExt, middleExt, ringExt, pinkyExt].filter(Boolean).length;
-          const isOpenPalm = extCount >= 3;
-          const isFist = extCount === 0;
-          const isTwoFingers = indexExt && middleExt && !ringExt && !pinkyExt;
-          const isIndexOnly = indexExt && !middleExt && !ringExt && !pinkyExt;
-          const isWHand = indexExt && middleExt && ringExt && !pinkyExt;
-          const isPinch = dist(rh[4], rh[8]) < 0.075;
-          const isYHand = (thumbExt || pinkyExt) && pinkyExt && !middleExt && !ringExt;
-          const isThumbsUp = thumbExt && !indexExt && !middleExt && !ringExt && !pinkyExt;
+          const isOpenPalm = rhShape.isOpenPalm;
+          const isFist = rhShape.isFist;
+          const isTwoFingers = rhShape.isTwoFingers;
+          const isIndexOnly = rhShape.isIndexOnly;
+          const isWHand = rhShape.isWHand;
+          const isPinch = rhShape.isPinch;
+          const isYHand = rhShape.isYHand;
+          const isThumbsUp = rhShape.isThumbsUp;
 
-          // Spatial checks using fingertips & palm (not just wrist)
+          // Dynamic Action Metrics across window
+          const pinchDists = frameHistory.map(f => f.pinchDist);
+          const minPinch = Math.min(...pinchDists);
+          const maxPinch = Math.max(...pinchDists);
+          const isPinchingAction = (isPinch || (maxPinch - minPinch > 0.035));
+
+          const scissorDists = frameHistory.map(f => f.scissorDist);
+          const isScissorAction = isTwoFingers && ((Math.max(...scissorDists) - Math.min(...scissorDists)) > 0.020);
+
+          // Spatial checks
           const handHigh = (wrist.y < nose.y + 0.18) || (rh[8].y < nose.y + 0.08) || (rh[12].y < nose.y + 0.08);
           const handNearChin = (dist(rh[8], chin) < 0.25) || (dist(rh[12], chin) < 0.25) || (dist(rh[9], chin) < 0.25) || (dist(wrist, chin) < 0.28);
           const handNearChest = !handHigh && !handNearChin && wrist.y < 0.88;
@@ -828,14 +861,36 @@ if mode == "📹 Live Camera (Primary)":
           const dy = endW.y - startW.y;
           const disp = Math.hypot(dx, dy);
 
+          // Two-handed dynamic metrics
+          let isSteeringAction = false;
+          let isBookOpeningAction = false;
+          if (hasLH && hasRH && frameHistory.length >= 4) {{
+            const f0 = frameHistory[0];
+            const fLast = frameHistory[frameHistory.length - 1];
+            if (f0.wristL && f0.wristR && fLast.wristL && fLast.wristR) {{
+              const dyL = fLast.wristL.y - f0.wristL.y;
+              const dyR = fLast.wristR.y - f0.wristR.y;
+              // Opposing vertical motion = steering
+              if ((dyL * dyR < 0 && (Math.abs(dyL) > 0.012 || Math.abs(dyR) > 0.012)) || (rhShape.isFist && lhShape.isFist)) {{
+                isSteeringAction = true;
+              }}
+              // Opening / closing distance between hands = book
+              const dStart = dist(f0.wristL, f0.wristR);
+              const dEnd = dist(fLast.wristL, fLast.wristR);
+              if (rhShape.isOpenPalm && lhShape.isOpenPalm && (Math.abs(dEnd - dStart) > 0.02 || dEnd < 0.35)) {{
+                isBookOpeningAction = true;
+              }}
+            }}
+          }}
+
           let detected = null;
           let conf = 0.0;
           let source = "95_class_model";
 
           // ==========================================
-          // 1. DISTINCTIVE GESTURE MATCHING (95-Sign + Everyday)
+          // 1. DYNAMIC ACTION & GESTURE MATCHING
           // ==========================================
-          // --- HEAD & FOREHEAD REGION ---
+          // --- HEAD & FOREHEAD ---
           // A. Hello: Open flat palm raised at forehead / temple / head level
           if (isOpenPalm && handHigh) {{
             detected = "hello"; conf = 0.96; source = "everyday_gesture_layer";
@@ -848,7 +903,7 @@ if mode == "📹 Live Camera (Primary)":
           else if (isOpenPalm && handHigh && disp > 0.025) {{
             detected = "grandpa"; conf = 0.93; source = "95_class_model";
           }}
-          // D. Dad / Boy: Hand touching / tapping forehead
+          // D. Boy / Dad: Hand tapping / touching forehead
           else if (isPinch && handHigh) {{
             detected = "boy"; conf = 0.92; source = "95_class_model";
           }}
@@ -857,7 +912,7 @@ if mode == "📹 Live Camera (Primary)":
             detected = "ear"; conf = 0.91; source = "95_class_model";
           }}
 
-          // --- FACE & CHIN REGION ---
+          // --- FACE & CHIN ---
           // F. Thank You: Flat open hand touching or close to chin/mouth moving out
           else if (isOpenPalm && handNearChin && !handHigh) {{
             detected = "thank you"; conf = 0.95; source = "everyday_gesture_layer";
@@ -898,53 +953,53 @@ if mode == "📹 Live Camera (Primary)":
           else if ((isPinch || isTwoFingers) && handNearChin && Math.abs(dx) > 0.012) {{
             detected = "cat"; conf = 0.91; source = "95_class_model";
           }}
-          // P. Cheek / Chin / Cry: Index pointing or tracing on face
-          else if (isIndexOnly && handNearChin) {{
-            detected = dy > 0.015 ? "cry" : "chin"; conf = 0.90; source = "95_class_model";
-          }}
 
-          // --- TWO-HANDED GESTURES ---
-          // Q. Stop: Two open hands chopping / holding
+          // --- TWO-HANDED DYNAMIC ACTIONS ---
+          // P. Car: Two fists steering (turning wheel)
+          else if (hasLH && hasRH && (isSteeringAction || (rhShape.isFist && lhShape.isFist))) {{
+            detected = "car"; conf = 0.95; source = "95_class_model";
+          }}
+          // Q. Book: Opening / closing book with both hands
+          else if (hasLH && hasRH && (isBookOpeningAction || (rhShape.isOpenPalm && lhShape.isOpenPalm && handNearChest))) {{
+            detected = "book"; conf = 0.94; source = "95_class_model";
+          }}
+          // R. Stop: Two open hands chopping / holding
           else if (hasLH && hasRH && isOpenPalm && dy > 0.02) {{
-            detected = "stop"; conf = 0.95; source = "everyday_gesture_layer";
+            detected = "stop"; conf = 0.94; source = "everyday_gesture_layer";
           }}
-          // R. Car: Two fists steering
-          else if (hasLH && hasRH && isFist) {{
-            detected = "car"; conf = 0.94; source = "95_class_model";
-          }}
-          // S. Book: Two flat palms opening outward
-          else if (hasLH && hasRH && isOpenPalm && handNearChest) {{
-            detected = "book"; conf = 0.93; source = "95_class_model";
-          }}
-          // T. Clean: One palm brushing across other flat palm
+          // S. Clean: One palm brushing across other flat palm
           else if (hasLH && hasRH && isOpenPalm && disp > 0.025) {{
             detected = "clean"; conf = 0.92; source = "95_class_model";
           }}
-          // U. Boat: Two cupped palms moving together
+          // T. Boat: Two cupped palms moving together
           else if (hasLH && hasRH && isOpenPalm && disp > 0.02) {{
             detected = "boat"; conf = 0.91; source = "95_class_model";
           }}
-          // V. Alligator: Two arms clapping shut
+          // U. Alligator: Two arms opening wide and clapping shut
           else if (hasLH && hasRH && isOpenPalm && dy > 0.04) {{
             detected = "alligator"; conf = 0.93; source = "95_class_model";
           }}
-          // W. Help: Thumbs-up lifted by flat palm
+          // V. Help: Thumbs-up lifted by flat palm
           else if (hasLH && hasRH && isThumbsUp) {{
             detected = "help"; conf = 0.92; source = "everyday_gesture_layer";
           }}
-          // X. Dance: Two fingers swaying on base palm
+          // W. Dance: Two fingers swaying on base palm
           else if (hasLH && hasRH && isTwoFingers) {{
             detected = "dance"; conf = 0.91; source = "95_class_model";
           }}
-          // Y. Love: Two fists crossed over chest
+          // X. Love: Two fists crossed over chest
           else if (hasLH && hasRH && isFist && handNearChest) {{
             detected = "love"; conf = 0.92; source = "everyday_gesture_layer";
           }}
 
-          // --- CHEST & MOTION GESTURES ---
-          // Z. Duck / Bird: Beak pinch opening and closing at chest/chin
-          else if (isPinch && (handNearChin || handNearChest)) {{
+          // --- DYNAMIC FINGER & AIR ACTIONS ---
+          // Y. Duck / Bird: Beak opening & closing (chattering action)
+          else if (isPinchingAction && (handNearChin || handNearChest)) {{
             detected = "duck"; conf = 0.96; source = "95_class_model";
+          }}
+          // Z. Cut: Scissors opening & closing action
+          else if (isScissorAction || (isTwoFingers && Math.abs(dx) > 0.015)) {{
+            detected = "cut"; conf = 0.92; source = "95_class_model";
           }}
           // AA. Airplane: "I Love You" / Y-hand flying in air
           else if (isYHand && !handNearChin) {{
@@ -974,23 +1029,19 @@ if mode == "📹 Live Camera (Primary)":
           else if (isOpenPalm && Math.abs(dx) > 0.02) {{
             detected = "fish"; conf = 0.90; source = "95_class_model";
           }}
-          // HH. Cut: Two fingers opening and closing
-          else if (isTwoFingers && Math.abs(dx) > 0.015) {{
-            detected = "cut"; conf = 0.90; source = "95_class_model";
-          }}
-          // II. Please: Flat palm circling on chest
+          // HH. Please: Flat palm circling on chest
           else if (isOpenPalm && handNearChest && disp > 0.03) {{
             detected = "please"; conf = 0.90; source = "everyday_gesture_layer";
           }}
-          // JJ. Sorry: Fist circling on chest
+          // II. Sorry: Fist circling on chest
           else if (isFist && handNearChest && disp > 0.03) {{
             detected = "sorry"; conf = 0.90; source = "everyday_gesture_layer";
           }}
-          // KK. Fine: Open 5 hand held at chest
+          // JJ. Fine: Open 5 hand held at chest
           else if (isOpenPalm && handNearChest && disp < 0.03) {{
             detected = "fine"; conf = 0.89; source = "95_class_model";
           }}
-          // LL. All: Wide sweeping arm motion
+          // KK. All: Wide sweeping arm motion
           else if (isOpenPalm && disp > 0.10) {{
             detected = "all"; conf = 0.88; source = "95_class_model";
           }}
@@ -1011,7 +1062,7 @@ if mode == "📹 Live Camera (Primary)":
               confirmHoldUntil = now + 1600; // Hold steady for 1.6s for clear human reading
 
               const top5 = [{{ class: detected, confidence: conf, rule_compatibility: conf }}];
-              const defaultList = ["duck", "brother", "go", "hello", "bye", "thank you", "stop", "where", "apple", "airplane", "car", "book", "clean", "water", "eat"];
+              const defaultList = ["duck", "brother", "go", "hello", "bye", "thank you", "stop", "where", "apple", "airplane", "car", "book", "clean", "water", "eat", "cut", "alligator"];
               for (let name of defaultList) {{
                 if (name !== detected && top5.length < 5) {{
                   top5.push({{ class: name, confidence: 0.03 + Math.random() * 0.02, rule_compatibility: 0.30 }});
