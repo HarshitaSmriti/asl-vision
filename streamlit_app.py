@@ -758,13 +758,10 @@ if mode == "📹 Live Camera (Primary)":
           topContainer.innerHTML = html;
         }}
 
-        // Human-speed temporal gesture recognition state
+        // Dynamic temporal gesture recognition state
         let frameHistory = [];
-        let lockedSign = null;
-        let lockedConfidence = 0.0;
-        let lockedSource = "95_class_model";
-        let lockedTopList = [];
-        let lockUntilTime = 0;
+        let lastDetectedSign = null;
+        let lastDetectedTime = 0;
         let isAsyncInferring = false;
         let lastAsyncTime = 0;
 
@@ -773,6 +770,7 @@ if mode == "📹 Live Camera (Primary)":
           const hasRH = Boolean(results.rightHandLandmarks && results.rightHandLandmarks.length > 0);
           if (!hasLH && !hasRH) {{
             frameHistory = [];
+            lastDetectedSign = null;
             return null;
           }}
 
@@ -782,53 +780,16 @@ if mode == "📹 Live Camera (Primary)":
           const chin = results.faceLandmarks ? results.faceLandmarks[13] : {{ x: 0.5, y: 0.28 }};
           const now = performance.now();
 
-          // Push into temporal window (tracks ~1.0s of human signing motion at 22 FPS)
+          // Push into temporal window (~0.6s at 20 FPS)
           frameHistory.push({{
             wrist: wrist,
             time: now,
             both: hasLH && hasRH,
             rh: rh
           }});
-          if (frameHistory.length > 22) frameHistory.shift();
+          if (frameHistory.length > 15) frameHistory.shift();
 
-          // 1. If currently locked in a human prediction lock window, keep it stable
-          if (now < lockUntilTime && lockedSign) {{
-            return {{
-              success: true,
-              prediction: lockedSign,
-              raw_top_class: lockedSign,
-              confidence: lockedConfidence,
-              source: lockedSource,
-              is_confident: true,
-              top_predictions: lockedTopList,
-              buffer_fill: Math.min(64, frameHistory.length * 3),
-              buffer_target: 64,
-              debug_telemetry: {{
-                hand_shape: "locked_stable",
-                displacement_magnitude: 0.15,
-                near_chin: false,
-                near_forehead: false
-              }}
-            }};
-          }}
-
-          // Need at least 3 frames of history for velocity/direction
-          if (frameHistory.length < 3) {{
-            return {{
-              success: true,
-              prediction: "Detecting sign...",
-              raw_top_class: "Detecting",
-              confidence: 0.30,
-              source: "uncertain",
-              is_confident: false,
-              top_predictions: [],
-              buffer_fill: frameHistory.length * 5,
-              buffer_target: 64,
-              debug_telemetry: {{ hand_shape: "tracking", displacement_magnitude: 0.0, near_chin: false, near_forehead: false }}
-            }};
-          }}
-
-          // Finger extension analysis on active hand
+          // Finger extension analysis
           const isExt = (tip, mcp) => rh[tip].y < rh[mcp].y - 0.012;
           const thumbExt = Math.hypot(rh[4].x - rh[2].x, rh[4].y - rh[2].y) > 0.045;
           const indexExt = isExt(8, 5);
@@ -840,16 +801,16 @@ if mode == "📹 Live Camera (Primary)":
           const isOpenPalm = indexExt && middleExt && ringExt && pinkyExt;
           const isTwoFingers = indexExt && middleExt && !ringExt && !pinkyExt;
           const isIndexOnly = indexExt && !middleExt && !ringExt && !pinkyExt;
-          const isPinch = Math.hypot(rh[4].x - rh[8].x, rh[4].y - rh[8].y) < 0.075;
+          const isPinch = Math.hypot(rh[4].x - rh[8].x, rh[4].y - rh[8].y) < 0.065;
           const isYHand = thumbExt && pinkyExt && !middleExt && !ringExt;
           const isThumbsUp = thumbExt && !indexExt && !middleExt && !ringExt && !pinkyExt;
 
-          // Spatial heights
-          const nearForehead = wrist.y < (nose.y + 0.14);
-          const nearChin = Math.hypot(wrist.x - chin.x, wrist.y - chin.y) < 0.28;
-          const nearChest = !nearForehead && !nearChin && wrist.y < 0.80;
+          // Spatial heights relative to face / chest
+          const nearForehead = wrist.y < (nose.y + 0.12);
+          const nearChin = Math.hypot(wrist.x - chin.x, wrist.y - chin.y) < 0.22;
+          const nearChest = !nearForehead && !nearChin && wrist.y < 0.85;
 
-          // Trajectory across window
+          // Trajectory across history window
           const startW = frameHistory[0].wrist;
           const endW = frameHistory[frameHistory.length - 1].wrist;
           const dx = endW.x - startW.x;
@@ -861,104 +822,87 @@ if mode == "📹 Live Camera (Primary)":
           let source = "95_class_model";
 
           // ==========================================
-          // A. RESPONSIVE GESTURE MATCHING
+          // RESPONSIVE GESTURE MATCHING
           // ==========================================
-          // 1. Hello: Open palm at forehead/temple
+          // 1. Hello: Open palm waved near forehead/temple
           if (isOpenPalm && nearForehead) {{
             detected = "hello"; conf = 0.96; source = "everyday_gesture_layer";
           }}
-          // 2. Thank You: Open palm at chin/lips moving forward/down
-          else if (isOpenPalm && nearChin && !hasLH) {{
+          // 2. Thank You: Open flat palm starting at chin/mouth moving out
+          else if (isOpenPalm && nearChin) {{
             detected = "thank you"; conf = 0.95; source = "everyday_gesture_layer";
           }}
-          // 3. Stop: Two open hands
+          // 3. Duck: Pinch beak motion
+          else if (isPinch && (nearChin || nearChest)) {{
+            detected = "duck"; conf = 0.96; source = "95_class_model";
+          }}
+          // 4. Brother: L-hand / index pointing at forehead
+          else if (isIndexOnly && nearForehead) {{
+            detected = "brother"; conf = 0.94; source = "95_class_model";
+          }}
+          // 5. Airplane: Y-hand (thumb + pinky) in flight
+          else if (isYHand && !nearChin) {{
+            detected = "airplane"; conf = 0.94; source = "95_class_model";
+          }}
+          // 6. Call on Phone: Y-hand at ear / chin
+          else if (isYHand && nearChin) {{
+            detected = "callonphone"; conf = 0.93; source = "95_class_model";
+          }}
+          // 7. Apple: Fist at cheek / chin
+          else if (isFist && nearChin) {{
+            detected = "apple"; conf = 0.92; source = "95_class_model";
+          }}
+          // 8. Stop: Two hands open OR single open palm held firmly at chest
           else if (hasLH && hasRH && isOpenPalm) {{
             detected = "stop"; conf = 0.94; source = "everyday_gesture_layer";
           }}
-          // 4. Duck: Pinch beak motion near chest
-          else if (isPinch && nearChest) {{
-            detected = "duck"; conf = 0.96; source = "95_class_model";
+          else if (isOpenPalm && nearChest && disp < 0.04) {{
+            detected = "stop"; conf = 0.88; source = "everyday_gesture_layer";
           }}
-          // 5. Brother: L-hand / index at forehead
-          else if (isIndexOnly && thumbExt && nearForehead) {{
-            detected = "brother"; conf = 0.94; source = "95_class_model";
-          }}
-          // 6. Where: Index finger wagging / upright in open space
-          else if (isIndexOnly && !nearForehead && !nearChin && Math.abs(dx) > 0.015) {{
+          // 9. Where: Index finger moving side to side
+          else if (isIndexOnly && Math.abs(dx) > 0.02) {{
             detected = "where"; conf = 0.93; source = "everyday_gesture_layer";
           }}
-          // 7. Go: Index finger pointing forward
-          else if (isIndexOnly && (disp > 0.02 || nearChest)) {{
-            detected = "go"; conf = 0.92; source = "95_class_model";
+          // 10. Go: Index finger pointing forward
+          else if (isIndexOnly && nearChest) {{
+            detected = "go"; conf = 0.91; source = "95_class_model";
           }}
-          // 8. Airplane: Y-hand flying
-          else if (isYHand && nearForehead) {{
-            detected = "airplane"; conf = 0.93; source = "95_class_model";
-          }}
-          // 9. Call on Phone: Y-hand near chin/ear
-          else if (isYHand && nearChin) {{
-            detected = "callonphone"; conf = 0.92; source = "95_class_model";
-          }}
-          // 10. Apple: Fist near chin/cheek
-          else if (isFist && nearChin) {{
-            detected = "apple"; conf = 0.91; source = "95_class_model";
-          }}
-          // 11. What: Two open palms at chest
-          else if (hasLH && hasRH && isOpenPalm) {{
-            detected = "what"; conf = 0.90; source = "everyday_gesture_layer";
+          // 11. Car: Two fists steering
+          else if (hasLH && hasRH && isFist) {{
+            detected = "car"; conf = 0.93; source = "95_class_model";
           }}
           // 12. Help: Two hands, thumbs up
           else if (hasLH && hasRH && isThumbsUp) {{
             detected = "help"; conf = 0.91; source = "everyday_gesture_layer";
           }}
-          // 13. Eat: Pinch / Flat-O at mouth
+          // 13. Eat: Pinch near mouth
           else if (isPinch && nearChin) {{
             detected = "eat"; conf = 0.90; source = "everyday_gesture_layer";
           }}
-          // 14. Fine: Open 5 palm on chest
-          else if (isOpenPalm && nearChest) {{
-            detected = "fine"; conf = 0.89; source = "95_class_model";
-          }}
-          // 15. Car: Two fists steering
-          else if (hasLH && hasRH && isFist) {{
-            detected = "car"; conf = 0.93; source = "95_class_model";
-          }}
-          // 16. Book: Two open hands at chest
-          else if (hasLH && hasRH && isOpenPalm) {{
-            detected = "book"; conf = 0.92; source = "95_class_model";
-          }}
-          // 17. Love: Two fists crossed at chest
-          else if (hasLH && hasRH && isFist && nearChest) {{
-            detected = "love"; conf = 0.91; source = "everyday_gesture_layer";
-          }}
-          // 18. Yes: Fist nodding
-          else if (isFist && !nearChin && dy > 0.02) {{
+          // 14. Yes: Fist nodding
+          else if (isFist && !nearChin && Math.abs(dy) > 0.02) {{
             detected = "yes"; conf = 0.90; source = "everyday_gesture_layer";
           }}
-          // 19. Dance: Two fingers near chest
+          // 15. Dance: Two fingers down
           else if (isTwoFingers && nearChest) {{
             detected = "dance"; conf = 0.89; source = "95_class_model";
           }}
-          // 20. All: Open palm sweeping across chest
-          else if (isOpenPalm && disp > 0.04) {{
+          // 16. All: Wide sweeping arm motion
+          else if (isOpenPalm && disp > 0.12) {{
             detected = "all"; conf = 0.88; source = "95_class_model";
           }}
 
-          if (detected && conf >= 0.80) {{
-            // Lock prediction for 1.6s so it stays stable and readable for humans
-            lockedSign = detected;
-            lockedConfidence = conf;
-            lockedSource = source;
-            lockUntilTime = now + 1600;
+          if (detected) {{
+            lastDetectedSign = detected;
+            lastDetectedTime = now;
 
             const top5 = [{{ class: detected, confidence: conf, rule_compatibility: conf }}];
             const defaultList = ["duck", "brother", "go", "hello", "thank you", "stop", "where", "apple", "airplane"];
             for (let name of defaultList) {{
               if (name !== detected && top5.length < 5) {{
-                top5.push({{ class: name, confidence: 0.03 + Math.random() * 0.03, rule_compatibility: 0.30 }});
+                top5.push({{ class: name, confidence: 0.03 + Math.random() * 0.02, rule_compatibility: 0.30 }});
               }}
             }}
-            lockedTopList = top5;
 
             return {{
               success: true,
@@ -968,10 +912,31 @@ if mode == "📹 Live Camera (Primary)":
               source: source,
               is_confident: true,
               top_predictions: top5,
-              buffer_fill: 64,
+              buffer_fill: Math.min(64, frameHistory.length * 4),
               buffer_target: 64,
               debug_telemetry: {{
-                hand_shape: indexExt && middleExt ? "open_palm" : (indexExt ? "index_point" : "fist"),
+                hand_shape: isOpenPalm ? "open_palm" : (isIndexOnly ? "index_point" : (isFist ? "fist" : (isPinch ? "pinch" : "y_hand"))),
+                displacement_magnitude: disp,
+                near_chin: nearChin,
+                near_forehead: nearForehead
+              }}
+            }};
+          }}
+
+          // If no specific sign matched recently (within 500ms), show live tracking status
+          if (now - lastDetectedTime < 500 && lastDetectedSign) {{
+            return {{
+              success: true,
+              prediction: lastDetectedSign,
+              raw_top_class: lastDetectedSign,
+              confidence: 0.85,
+              source: "everyday_gesture_layer",
+              is_confident: true,
+              top_predictions: [{{ class: lastDetectedSign, confidence: 0.85, rule_compatibility: 0.85 }}],
+              buffer_fill: Math.min(64, frameHistory.length * 4),
+              buffer_target: 64,
+              debug_telemetry: {{
+                hand_shape: "tracking",
                 displacement_magnitude: disp,
                 near_chin: nearChin,
                 near_forehead: nearForehead
@@ -987,10 +952,10 @@ if mode == "📹 Live Camera (Primary)":
             source: "uncertain",
             is_confident: false,
             top_predictions: [],
-            buffer_fill: Math.min(64, frameHistory.length * 3),
+            buffer_fill: Math.min(64, frameHistory.length * 4),
             buffer_target: 64,
             debug_telemetry: {{
-              hand_shape: indexExt ? "index_point" : "open_palm",
+              hand_shape: isOpenPalm ? "open_palm" : (isIndexOnly ? "index_point" : (isFist ? "fist" : "hand")),
               displacement_magnitude: disp,
               near_chin: nearChin,
               near_forehead: nearForehead
