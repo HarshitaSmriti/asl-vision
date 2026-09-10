@@ -771,65 +771,71 @@ if mode == "Live Camera (Primary)":
         let lastAsyncTime = 0;
 
         function evaluateHumanPacedGesture(results) {{
-          const hasLH = Boolean(results.leftHandLandmarks && results.leftHandLandmarks.length > 0);
-          const hasRH = Boolean(results.rightHandLandmarks && results.rightHandLandmarks.length > 0);
-          if (!hasLH && !hasRH) {{
-            frameHistory = [];
-            shapeHistory = [];
-            candidateSign = null;
-            candidateStreak = 0;
-            confirmedSign = null;
-            return null;
-          }}
+          try {{
+            const hasLH = Boolean(results.leftHandLandmarks && results.leftHandLandmarks.length === 21);
+            const hasRH = Boolean(results.rightHandLandmarks && results.rightHandLandmarks.length === 21);
+            if (!hasLH && !hasRH) {{
+              frameHistory = [];
+              shapeHistory = [];
+              candidateSign = null;
+              candidateStreak = 0;
+              confirmedSign = null;
+              return null;
+            }}
 
-          const rh = results.rightHandLandmarks || results.leftHandLandmarks;
-          const lh = results.leftHandLandmarks || results.rightHandLandmarks;
-          const wrist = rh[0];
-          const wristL = hasLH ? results.leftHandLandmarks[0] : null;
-          const wristR = hasRH ? results.rightHandLandmarks[0] : null;
+            const rh = (results.rightHandLandmarks && results.rightHandLandmarks.length === 21) ? results.rightHandLandmarks : ((results.leftHandLandmarks && results.leftHandLandmarks.length === 21) ? results.leftHandLandmarks : null);
+            const lh = (results.leftHandLandmarks && results.leftHandLandmarks.length === 21) ? results.leftHandLandmarks : ((results.rightHandLandmarks && results.rightHandLandmarks.length === 21) ? results.rightHandLandmarks : null);
+            if (!rh || rh.length < 21) return null;
 
-          const nose = results.poseLandmarks ? results.poseLandmarks[0] : {{ x: 0.5, y: 0.2 }};
-          const chin = results.faceLandmarks ? results.faceLandmarks[13] : {{ x: 0.5, y: 0.28 }};
-          const now = performance.now();
+            const wrist = rh[0];
+            const wristL = hasLH ? results.leftHandLandmarks[0] : null;
+            const wristR = hasRH ? results.rightHandLandmarks[0] : null;
 
-          const dist = (p1, p2) => Math.hypot(p1.x - p2.x, p1.y - p2.y);
+            const nose = (results.poseLandmarks && results.poseLandmarks.length > 0 && results.poseLandmarks[0]) ? results.poseLandmarks[0] : {{ x: 0.5, y: 0.2 }};
+            const chin = (results.faceLandmarks && results.faceLandmarks.length > 13 && results.faceLandmarks[13]) ? results.faceLandmarks[13] : {{ x: nose.x, y: nose.y + 0.08 }};
+            const now = performance.now();
 
-          // Push into temporal window with two-handed tracking
-          frameHistory.push({{
-            wrist: wrist,
-            wristL: wristL,
-            wristR: wristR,
-            pinchDist: dist(rh[4], rh[8]),
-            scissorDist: dist(rh[8], rh[12]),
-            twoHandDist: (hasLH && hasRH) ? dist(results.leftHandLandmarks[0], results.rightHandLandmarks[0]) : null,
-            time: now,
-            both: hasLH && hasRH
-          }});
-          if (frameHistory.length > 20) frameHistory.shift();
+            const dist = (p1, p2) => (p1 && p2 && p1.x !== undefined && p2.x !== undefined) ? Math.hypot(p1.x - p2.x, p1.y - p2.y) : 999;
 
-          // Finger extension analysis on dominant hand
-          const isFingerExt = (hand, tipIdx, mcpIdx) => dist(hand[tipIdx], hand[0]) > (dist(hand[mcpIdx], hand[0]) * 1.30);
-          const getHandShape = (hand) => {{
-            if (!hand) return {{ isOpenPalm: false, isFist: false, isTwoFingers: false, isIndexOnly: false, isPinch: false, isYHand: false, isWHand: false, isThumbsUp: false }};
-            const tExt = dist(hand[4], hand[2]) > 0.045;
-            const iExt = isFingerExt(hand, 8, 5);
-            const mExt = isFingerExt(hand, 12, 9);
-            const rExt = isFingerExt(hand, 16, 13);
-            const pExt = isFingerExt(hand, 20, 17);
-            const extCount = [iExt, mExt, rExt, pExt].filter(Boolean).length;
-            const pinchGap = dist(hand[4], hand[8]);
+            // Push into temporal window with two-handed tracking
+            frameHistory.push({{
+              wrist: wrist,
+              wristL: wristL,
+              wristR: wristR,
+              pinchDist: dist(rh[4], rh[8]),
+              scissorDist: dist(rh[8], rh[12]),
+              twoHandDist: (hasLH && hasRH) ? dist(results.leftHandLandmarks[0], results.rightHandLandmarks[0]) : null,
+              time: now,
+              both: hasLH && hasRH
+            }});
+            if (frameHistory.length > 20) frameHistory.shift();
 
-            return {{
-              isOpenPalm: extCount >= 4,
-              isFist: extCount === 0,
-              isWHand: iExt && mExt && rExt && !pExt,
-              isTwoFingers: iExt && mExt && !rExt && !pExt,
-              isIndexOnly: iExt && !mExt && !rExt && !pExt,
-              isPinch: pinchGap < 0.055 && !rExt && !pExt,
-              isYHand: tExt && pExt && !mExt && !rExt,
-              isThumbsUp: tExt && extCount === 0
+            // Finger extension analysis on dominant hand
+            const isFingerExt = (hand, tipIdx, mcpIdx) => {{
+              if (!hand || !hand[tipIdx] || !hand[mcpIdx] || !hand[0]) return false;
+              return dist(hand[tipIdx], hand[0]) > (dist(hand[mcpIdx], hand[0]) * 1.30);
             }};
-          }};
+            const getHandShape = (hand) => {{
+              if (!hand || hand.length < 21) return {{ isOpenPalm: false, isFist: false, isTwoFingers: false, isIndexOnly: false, isPinch: false, isYHand: false, isWHand: false, isThumbsUp: false }};
+              const tExt = dist(hand[4], hand[2]) > 0.045;
+              const iExt = isFingerExt(hand, 8, 5);
+              const mExt = isFingerExt(hand, 12, 9);
+              const rExt = isFingerExt(hand, 16, 13);
+              const pExt = isFingerExt(hand, 20, 17);
+              const extCount = [iExt, mExt, rExt, pExt].filter(Boolean).length;
+              const pinchGap = dist(hand[4], hand[8]);
+
+              return {{
+                isOpenPalm: extCount >= 4,
+                isFist: extCount === 0,
+                isWHand: iExt && mExt && rExt && !pExt,
+                isTwoFingers: iExt && mExt && !rExt && !pExt,
+                isIndexOnly: iExt && !mExt && !rExt && !pExt,
+                isPinch: pinchGap < 0.055 && !rExt && !pExt,
+                isYHand: tExt && pExt && !mExt && !rExt,
+                isThumbsUp: tExt && extCount === 0
+              }};
+            }};
 
           const rawRhShape = getHandShape(rh);
           const lhShape = hasLH ? getHandShape(results.leftHandLandmarks) : rawRhShape;
@@ -1161,91 +1167,103 @@ if mode == "Live Camera (Primary)":
               near_forehead: handForehead
             }}
           }};
+        }} catch (err) {{
+          console.error("evaluateHumanPacedGesture error:", err);
+          return null;
         }}
+      }}
 
         // Predict on human temporal cadence with anti-flickering lock
         function predictFromLandmarks(results) {{
-          const hasPose = Boolean(results.poseLandmarks && results.poseLandmarks.length > 0);
-          const hasFace = Boolean(results.faceLandmarks && results.faceLandmarks.length > 0);
-          const hasLH = Boolean(results.leftHandLandmarks && results.leftHandLandmarks.length > 0);
-          const hasRH = Boolean(results.rightHandLandmarks && results.rightHandLandmarks.length > 0);
+          try {{
+            const hasPose = Boolean(results.poseLandmarks && results.poseLandmarks.length > 0);
+            const hasFace = Boolean(results.faceLandmarks && results.faceLandmarks.length > 0);
+            const hasLH = Boolean(results.leftHandLandmarks && results.leftHandLandmarks.length > 0);
+            const hasRH = Boolean(results.rightHandLandmarks && results.rightHandLandmarks.length > 0);
 
-          const tPose = document.getElementById('tele-pose');
-          const tFace = document.getElementById('tele-face');
-          const tLH = document.getElementById('tele-lh');
-          const tRH = document.getElementById('tele-rh');
-          const tBuf = document.getElementById('tele-buf');
+            const tPose = document.getElementById('tele-pose');
+            const tFace = document.getElementById('tele-face');
+            const tLH = document.getElementById('tele-lh');
+            const tRH = document.getElementById('tele-rh');
+            const tBuf = document.getElementById('tele-buf');
 
-          if (tPose) {{ tPose.innerText = hasPose ? "YES" : "NO"; tPose.style.color = hasPose ? "#10b981" : "#ef4444"; }}
-          if (tFace) {{ tFace.innerText = hasFace ? "YES" : "NO"; tFace.style.color = hasFace ? "#10b981" : "#ef4444"; }}
-          if (tLH) {{ tLH.innerText = hasLH ? "YES" : "NO"; tLH.style.color = hasLH ? "#10b981" : "#ef4444"; }}
-          if (tRH) {{ tRH.innerText = hasRH ? "YES" : "NO"; tRH.style.color = hasRH ? "#10b981" : "#ef4444"; }}
+            if (tPose) {{ tPose.innerText = hasPose ? "YES" : "NO"; tPose.style.color = hasPose ? "#10b981" : "#ef4444"; }}
+            if (tFace) {{ tFace.innerText = hasFace ? "YES" : "NO"; tFace.style.color = hasFace ? "#10b981" : "#ef4444"; }}
+            if (tLH) {{ tLH.innerText = hasLH ? "YES" : "NO"; tLH.style.color = hasLH ? "#10b981" : "#ef4444"; }}
+            if (tRH) {{ tRH.innerText = hasRH ? "YES" : "NO"; tRH.style.color = hasRH ? "#10b981" : "#ef4444"; }}
 
-          const hasHands = hasLH || hasRH;
-          if (!hasHands) {{
-            updatePredictions(null, false);
-            if (tBuf) {{ tBuf.innerText = "0/64 (no hands)"; }}
-            return;
-          }}
-
-          // 1. Human-scale temporal evaluation
-          const humanRes = evaluateHumanPacedGesture(results);
-          if (humanRes) {{
-            updatePredictions(humanRes, true);
-            if (tBuf) {{ tBuf.innerText = humanRes.buffer_fill + "/64"; }}
-          }}
-
-          // 2. Background model sync if available
-          const now = performance.now();
-          if (now - lastAsyncTime > 250 && !isAsyncInferring) {{
-            lastAsyncTime = now;
-            isAsyncInferring = true;
-            const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-            const apiUrl = isLocal ? 'http://localhost:8000/api/predict_live' : null;
-
-            if (apiUrl) {{
-              fetch(apiUrl, {{
-                method: 'POST',
-                headers: {{ 'Content-Type': 'application/json' }},
-                body: JSON.stringify({{
-                  session_id: 'live_stream',
-                  hybrid_mode: hybridMode,
-                  landmarks: {{
-                    pose: results.poseLandmarks ? results.poseLandmarks.slice(0, 25).map(l => [l.x, l.y, l.z]) : [],
-                    face: results.faceLandmarks ? results.faceLandmarks.map(l => [l.x, l.y, l.z]) : [],
-                    left_hand: results.leftHandLandmarks ? results.leftHandLandmarks.map(l => [l.x, l.y, l.z]) : [],
-                    right_hand: results.rightHandLandmarks ? results.rightHandLandmarks.map(l => [l.x, l.y, l.z]) : []
-                  }}
-                }})
-              }}).then(res => res.json()).then(data => {{
-                if (data && data.top_predictions && data.top_predictions.length > 0 && data.confidence > 0.60) {{
-                  updatePredictions(data, true);
-                }}
-              }}).catch(() => {{}}).finally(() => {{
-                isAsyncInferring = false;
-              }});
-            }} else {{
-              isAsyncInferring = false;
+            const hasHands = hasLH || hasRH;
+            if (!hasHands) {{
+              updatePredictions(null, false);
+              if (tBuf) {{ tBuf.innerText = "0/64 (no hands)"; }}
+              return;
             }}
+
+            // 1. Human-scale temporal evaluation
+            const humanRes = evaluateHumanPacedGesture(results);
+            if (humanRes) {{
+              updatePredictions(humanRes, true);
+              if (tBuf) {{ tBuf.innerText = humanRes.buffer_fill + "/64"; }}
+            }}
+
+            // 2. Background model sync if available
+            const now = performance.now();
+            if (now - lastAsyncTime > 250 && !isAsyncInferring) {{
+              lastAsyncTime = now;
+              isAsyncInferring = true;
+              const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+              const apiUrl = isLocal ? 'http://localhost:8000/api/predict_live' : null;
+
+              if (apiUrl) {{
+                fetch(apiUrl, {{
+                  method: 'POST',
+                  headers: {{ 'Content-Type': 'application/json' }},
+                  body: JSON.stringify({{
+                    session_id: 'live_stream',
+                    hybrid_mode: hybridMode,
+                    landmarks: {{
+                      pose: results.poseLandmarks ? results.poseLandmarks.slice(0, 25).map(l => [l.x, l.y, l.z]) : [],
+                      face: results.faceLandmarks ? results.faceLandmarks.map(l => [l.x, l.y, l.z]) : [],
+                      left_hand: results.leftHandLandmarks ? results.leftHandLandmarks.map(l => [l.x, l.y, l.z]) : [],
+                      right_hand: results.rightHandLandmarks ? results.rightHandLandmarks.map(l => [l.x, l.y, l.z]) : []
+                    }}
+                  }})
+                }}).then(res => res.json()).then(data => {{
+                  if (data && data.top_predictions && data.top_predictions.length > 0 && data.confidence > 0.60) {{
+                    updatePredictions(data, true);
+                  }}
+                }}).catch(() => {{}}).finally(() => {{
+                  isAsyncInferring = false;
+                }});
+              }} else {{
+                isAsyncInferring = false;
+              }}
+            }}
+          }} catch (err) {{
+            console.error("predictFromLandmarks error:", err);
           }}
         }}
 
         function onResults(results) {{
-          frameCount++;
-          const now = performance.now();
-          if (now - lastTime >= 1000) {{
-            fpsVal.innerText = frameCount;
-            frameCount = 0;
-            lastTime = now;
+          try {{
+            frameCount++;
+            const now = performance.now();
+            if (now - lastTime >= 1000) {{
+              fpsVal.innerText = frameCount;
+              frameCount = 0;
+              lastTime = now;
+            }}
+
+            canvasElement.width = videoElement.videoWidth || 640;
+            canvasElement.height = videoElement.videoHeight || 480;
+
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+            drawSkeletonOverlay(results, canvasElement.width, canvasElement.height);
+            predictFromLandmarks(results);
+          }} catch (err) {{
+            console.error("onResults error:", err);
           }}
-
-          canvasElement.width = videoElement.videoWidth || 640;
-          canvasElement.height = videoElement.videoHeight || 480;
-
-          canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-
-          drawSkeletonOverlay(results, canvasElement.width, canvasElement.height);
-          predictFromLandmarks(results);
         }}
 
         function toggleHybrid() {{
@@ -1281,6 +1299,7 @@ if mode == "Live Camera (Primary)":
               }});
 
               holistic.onResults(onResults);
+              await holistic.initialize();
             }}
 
             // 2. Direct getUserMedia
@@ -1302,16 +1321,17 @@ if mode == "Live Camera (Primary)":
             // 3. Throttled continuous frame loop (Smooth ~22 FPS without CPU overload)
             let isSending = false;
             let lastSendTime = 0;
-            const FRAME_INTERVAL_MS = 45;
+            const FRAME_INTERVAL_MS = 40;
 
             const pumpFrames = async () => {{
               const now = performance.now();
-              if (cameraRunning && videoElement.readyState >= 2 && !isSending && (now - lastSendTime >= FRAME_INTERVAL_MS)) {{
+              if (cameraRunning && videoElement.readyState >= 2 && videoElement.videoWidth > 0 && !isSending && (now - lastSendTime >= FRAME_INTERVAL_MS)) {{
                 lastSendTime = now;
                 isSending = true;
                 try {{
                   await holistic.send({{ image: videoElement }});
                 }} catch (e) {{
+                  console.warn("Holistic send error:", e);
                 }} finally {{
                   isSending = false;
                 }}
